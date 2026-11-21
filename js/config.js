@@ -6,7 +6,7 @@
 // (elle se termine par /exec). Tant que la valeur reste
 // "VOTRE_URL_ICI", l'application fonctionne en « mode local » :
 // les élèves pratiquent, mais rien n'est envoyé à la feuille Google.
-const GOOGLE_SCRIPT_URL = "VOTRE_URL_ICI";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyFHGei62fMCdOmznImv3gg96yKbXwq0lkag9X4SzYvhhLuqpvaM_NTgyQI8igB-pWo3g/exec";
 
 // Nombre de questions par mode
 const CONFIG = {
