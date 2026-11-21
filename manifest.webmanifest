@@ -1,0 +1,16 @@
+{
+  "name": "IrregularVerbs — verbes irréguliers",
+  "short_name": "IrregularVerbs",
+  "description": "Pratique des verbes irréguliers anglais (2e secondaire)",
+  "lang": "fr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f6fb",
+  "theme_color": "#5b5bf0",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

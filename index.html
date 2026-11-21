@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Irregular Verbs — Pratique des verbes irréguliers</title>
+  <meta name="description" content="Pratique des verbes irréguliers anglais pour la 2e secondaire.">
+  <meta name="theme-color" content="#5b5bf0">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="saut" href="#principal">Aller au contenu</a>
+
+  <header class="entete">
+    <div class="marque">
+      <span class="logo" aria-hidden="true">V</span>
+      <span class="marque-txt">Irregular<b>Verbs</b></span>
+    </div>
+    <div class="entete-stats" id="entete-stats" hidden>
+      <span class="pastille" id="pastille-serie" title="Jours consécutifs de pratique">🔥 <b id="val-serie">0</b></span>
+      <span class="pastille" id="pastille-niveau" title="Niveau et points d'expérience">⭐ Niv. <b id="val-niveau">1</b></span>
+      <span class="pastille code" id="pastille-code" title="Ton code"></span>
+    </div>
+    <div class="entete-actions">
+      <span class="sync" id="sync" role="status" aria-live="polite"></span>
+      <button class="btn-icone" id="btn-lecture" aria-pressed="false" title="Lecture facilitée (texte plus grand et espacé)" aria-label="Lecture facilitée">Aa</button>
+      <button class="btn-icone" id="btn-theme" title="Mode clair / sombre">🌙</button>
+    </div>
+  </header>
+
+  <main id="principal" tabindex="-1">
+
+    <!-- =============== CONNEXION =============== -->
+    <section class="ecran" id="ecran-connexion" hidden>
+      <div class="carte carte-connexion">
+        <h1>Salut ! 👋</h1>
+        <p class="muted">Entre ton numéro de groupe et tes initiales. Tu dois utiliser <b>toujours le même code</b> pour retrouver ta progression.</p>
+        <form id="form-connexion" autocomplete="off" novalidate>
+          <div class="rangee-code">
+            <label class="champ">
+              <span>Groupe</span>
+              <input id="in-groupe" inputmode="numeric" maxlength="4" placeholder="21" required aria-describedby="aide-code">
+            </label>
+            <span class="tiret" aria-hidden="true">–</span>
+            <label class="champ">
+              <span>Initiales</span>
+              <input id="in-initiales" maxlength="5" placeholder="AB" autocapitalize="characters" required aria-describedby="aide-code">
+            </label>
+          </div>
+          <p class="aide" id="aide-code">Ton code : <b id="apercu-code">—</b>. Si un ou une élève de ton groupe a les mêmes initiales, ajoute un chiffre (ex. AB2).</p>
+          <p class="erreur" id="erreur-connexion" role="alert"></p>
+          <button class="btn btn-principal btn-large" type="submit">C'est parti →</button>
+        </form>
+        <div id="anciens-codes" class="anciens-codes"></div>
+      </div>
+    </section>
+
+    <!-- =============== ACCUEIL =============== -->
+    <section class="ecran" id="ecran-accueil" hidden>
+      <div class="bienvenue">
+        <div>
+          <h1 id="titre-accueil">Prêt·e à pratiquer ?</h1>
+          <p class="muted" id="message-accueil"></p>
+        </div>
+        <button class="btn btn-fantome" id="btn-changer-eleve">Changer d'élève</button>
+      </div>
+
+      <h2 class="titre-section"><span class="num">1</span> Choisis ton bloc</h2>
+      <div class="grille-blocs" id="grille-blocs" role="radiogroup" aria-label="Bloc de verbes"></div>
+
+      <h2 class="titre-section"><span class="num">2</span> Choisis ton activité</h2>
+      <div class="grille-modes" id="grille-modes"></div>
+
+      <details class="options" id="options">
+        <summary>⚙️ Options : quelle forme veux-tu recevoir ?</summary>
+        <div class="segment" id="seg-forme" role="radiogroup" aria-label="Forme donnée">
+          <button data-forme="hasard" role="radio">Au hasard</button>
+          <button data-forme="fr" role="radio">Français</button>
+          <button data-forme="base" role="radio">Infinitif</button>
+          <button data-forme="passe" role="radio">Passé</button>
+          <button data-forme="participe" role="radio">Participe</button>
+        </div>
+        <p class="aide">On te donne une forme, tu complètes les trois autres. « Au hasard » est le meilleur choix pour bien retenir.</p>
+      </details>
+
+      <h2 class="titre-section">🏅 Mes badges</h2>
+      <div class="badges" id="badges"></div>
+    </section>
+
+    <!-- =============== ÉTUDIER =============== -->
+    <section class="ecran" id="ecran-etude" hidden>
+      <div class="barre-ecran">
+        <button class="btn btn-fantome" data-retour>← Retour</button>
+        <h1 id="titre-etude">Étudier</h1>
+      </div>
+      <div class="carte conseil">
+        <b>Truc d'apprentissage :</b> lis une famille, puis cache une colonne et essaie de te rappeler chaque forme <em>avant</em> de cliquer. Se tester, c'est la façon la plus efficace d'apprendre.
+      </div>
+      <div class="segment segment-cacher" id="seg-cacher" aria-label="Cacher une colonne">
+        <span class="muted">Cacher :</span>
+        <button data-cacher="aucune" aria-pressed="true">Rien</button>
+        <button data-cacher="base" aria-pressed="false">Infinitif</button>
+        <button data-cacher="passe" aria-pressed="false">Passé</button>
+        <button data-cacher="participe" aria-pressed="false">Participe</button>
+        <button data-cacher="fr" aria-pressed="false">Français</button>
+      </div>
+      <div id="liste-etude"></div>
+    </section>
+
+    <!-- =============== EXERCICE =============== -->
+    <section class="ecran" id="ecran-exercice" hidden>
+      <div class="barre-exercice">
+        <button class="btn btn-fantome" id="btn-quitter">✕ Quitter</button>
+        <div class="progression" aria-hidden="true"><div class="progression-barre" id="progression-barre"></div></div>
+        <span class="compteur" id="compteur"></span>
+      </div>
+
+      <form class="carte carte-question" id="form-question" autocomplete="off" novalidate>
+        <div class="question-tete">
+          <span class="etiquette" id="etiquette-mode"></span>
+          <span class="serie-live" id="serie-live" aria-live="polite"></span>
+        </div>
+        <p class="donnee-label" id="donnee-label"></p>
+        <div class="donnee">
+          <span id="donnee-valeur"></span>
+          <button type="button" class="btn-icone btn-audio" id="btn-audio-donnee" aria-label="Écouter la prononciation">🔊</button>
+        </div>
+        <p class="indice-desamb" id="indice-desamb"></p>
+
+        <div class="champs-reponse" id="champs-reponse"></div>
+
+        <div class="retro" id="retro" aria-live="polite"></div>
+
+        <div class="actions-question">
+          <button type="button" class="btn btn-secondaire" id="btn-indice">💡 Indice</button>
+          <button type="submit" class="btn btn-principal" id="btn-valider">Vérifier <kbd>Entrée</kbd></button>
+        </div>
+      </form>
+    </section>
+
+    <!-- =============== RÉSULTATS =============== -->
+    <section class="ecran" id="ecran-resultats" hidden>
+      <div class="carte carte-resultats">
+        <div class="anneau" id="anneau"><span id="res-pct">0 %</span></div>
+        <h1 id="res-titre"></h1>
+        <p class="muted" id="res-message"></p>
+        <div class="res-stats" id="res-stats"></div>
+        <div id="res-revoir"></div>
+        <div class="actions-resultats">
+          <button class="btn btn-secondaire" id="btn-res-accueil">Accueil</button>
+          <button class="btn btn-principal" id="btn-res-rejouer">Recommencer</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="pied">
+    <a href="enseignant.html">Espace enseignant</a>
+  </footer>
+
+  <noscript><p class="carte">Cette application a besoin de JavaScript pour fonctionner.</p></noscript>
+
+  <script src="js/config.js"></script>
+  <script src="js/verbes-defaut.js"></script>
+  <script src="js/commun.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

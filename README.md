@@ -1,0 +1,109 @@
+# IrregularVerbs — Pratique des verbes irréguliers (2e secondaire)
+
+Application Web statique (HTML, CSS, JavaScript) hébergée gratuitement sur **GitHub Pages**, avec une **feuille Google** comme base de données (via Google Apps Script).
+
+---
+
+## 📁 Contenu du dossier
+
+```
+index.html            ← application élève
+enseignant.html       ← espace enseignant (NIP)
+css/styles.css        ← design (clair/sombre, responsive)
+js/config.js          ← ⚠️ LE fichier à modifier (URL du script)
+js/verbes-defaut.js   ← liste par défaut (4 blocs × 25 verbes)
+js/commun.js          ← outils communs (validation, familles, audio…)
+js/app.js             ← logique élève
+js/enseignant.js      ← logique enseignant
+sw.js, manifest.webmanifest, assets/  ← mode hors-ligne et application installable
+apps-script/Code.gs   ← code à coller dans Google Apps Script
+```
+
+---
+
+## Étape 1 — Créer la base de données (Google Sheets), environ 10 minutes
+
+1. Va sur <https://sheets.google.com> et crée une **feuille vide**. Nomme-la par exemple « Verbes irréguliers — résultats ».
+2. Menu **Extensions › Apps Script**.
+3. Efface le contenu de `Code.gs`, colle **tout** le contenu du fichier `apps-script/Code.gs`, puis clique 💾 **Enregistrer**.
+4. Retourne dans la feuille et **recharge la page** (F5). Un menu **« Verbes irréguliers »** apparaît à droite d'« Aide ».
+5. Menu **Verbes irréguliers › 1. Préparer la feuille**. Google demande une autorisation la première fois :
+   *Continuer › choisis ton compte › Paramètres avancés › Accéder au projet (non sécurisé) › Autoriser*.
+   C'est normal : c'est ton propre script.
+6. Menu **Verbes irréguliers › 2. Définir ou changer le NIP**, puis choisis un NIP de 4 à 8 chiffres.
+7. Dans Apps Script : **Déployer › Nouveau déploiement**
+   - Type (⚙️) : **Application Web**
+   - Exécuter en tant que : **Moi**
+   - Qui a accès : **Tout le monde**
+   - Clique sur **Déployer** et copie l'**URL de l'application Web** (elle se termine par `/exec`).
+
+> 💡 **Test rapide :** colle l'URL suivie de `?action=ping` dans ton navigateur. Tu dois voir `{"ok":true,"message":"Le script fonctionne."}`.
+
+> ⚠️ **Si tu modifies `Code.gs` plus tard :** *Déployer › Gérer les déploiements › ✏️ › Version : Nouvelle version › Déployer*. L'URL reste la même.
+
+## Étape 2 — Brancher le site sur la feuille
+
+Ouvre `js/config.js` et remplace `VOTRE_URL_ICI` par ton URL :
+
+```js
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
+```
+
+## Étape 3 — Mettre en ligne sur GitHub Pages, environ 5 minutes
+
+1. Connecte-toi à <https://github.com> et clique sur **New repository**. Nom suggéré : `verbes-irreguliers`. Choisis **Public** et clique sur **Create repository**.
+2. Clique sur **uploading an existing file**, glisse **tout le contenu** du dossier (pas le dossier lui-même : `index.html` doit être à la racine), puis **Commit changes**.
+3. Va dans **Settings › Pages**. Sous *Branch*, choisis **main** et **/(root)**, puis clique sur **Save**.
+4. Après 1 ou 2 minutes, ton site est en ligne à l'adresse `https://TON-NOM.github.io/verbes-irreguliers/`.
+5. L'espace enseignant se trouve à `…/verbes-irreguliers/enseignant.html` (il y a aussi un lien discret au bas de l'application).
+
+> Pour mettre le site à jour, téléverse le fichier modifié dans GitHub. Si les élèves voient encore l'ancienne version, change `VERSION` dans `sw.js` (ex. `iv-v2`).
+
+---
+
+## 👩‍🏫 Utilisation en classe
+
+### Pour les élèves
+- **Code élève** : numéro de groupe + initiales, par exemple `21-DC`. Si deux élèves d'un groupe ont les mêmes initiales, l'un ou l'une ajoute un chiffre (`21-DC2`). Aucun nom complet n'est enregistré, ce qui respecte la Loi 25.
+- Sur un **Chromebook partagé**, chaque code a sa propre progression. Les codes déjà utilisés apparaissent sous forme de raccourcis (le ✕ les retire de l'appareil).
+- On choisit un **bloc** (1 à 4), puis une **activité** :
+
+| Activité | Description |
+|---|---|
+| 📖 Étudier | Verbes regroupés par **familles** (cut-cut-cut, sing-sang-sung…). On cache une colonne pour s'autotester. |
+| 🎯 Entraînement | 15 questions choisies par **répétition espacée** : les verbes ratés reviennent plus souvent. Indices permis. |
+| 📝 Quiz | 20 questions notées. Un indice divise les points de la question par deux. |
+| ⚡ Sprint 60 s | Le plus de verbes possible en une minute, sans indice. Un record est conservé par bloc. |
+| 🧠 Mes verbes difficiles | Seulement les verbes ratés la dernière fois. |
+
+- **Format des questions** : une des 4 formes est donnée (infinitif, passé, participe ou français) et l'élève complète les 3 autres. Le menu « Options » permet de fixer la forme donnée (par défaut : au hasard).
+- **Validation** : majuscules et espaces ignorés, variantes acceptées (`learned/learnt`, `was/were`, `got/gotten`), `to go` accepté, accents non exigés en français, **aucune faute d'orthographe tolérée**.
+- **Hors-ligne** : si le Wi-Fi coupe, l'élève continue. Les résultats s'envoient automatiquement au retour du réseau (indicateur ☁️ / ⏳ en haut à droite).
+
+### Pour l'enseignant (NIP)
+- **👥 Élèves** : activités, moyenne, meilleur sprint, temps de pratique et verbes à revoir pour chaque élève. Filtres par groupe, bloc, activité et période.
+- **🔥 Verbes difficiles** : taux d'erreur par verbe, avec une **carte de chaleur par groupe** pour cibler les mini-leçons.
+- **📚 Listes de verbes** : modifie les 4 blocs (une ligne par verbe : `infinitif ; passé ; participe ; français`, variantes séparées par `/`). Tu peux aussi coller des colonnes copiées d'Excel. Les verbes sont enregistrés dans l'onglet « Verbes » de la feuille, où tu peux aussi les modifier directement.
+- **⚙️ Gestion** : export CSV, **suppression des données d'un groupe** (avec confirmation) et changement du NIP.
+
+### Sécurité du NIP
+Le NIP n'est **jamais** écrit dans le site. Il est vérifié par le script Google et conservé haché (SHA-256 avec sel) dans les propriétés du script. Après 5 essais ratés, la connexion est bloquée pendant 5 minutes. La session enseignant se ferme quand on ferme l'onglet.
+
+---
+
+## 🧠 Fondements pédagogiques
+- **Pratique de récupération** (*retrieval practice*) : se tester plutôt que relire.
+- **Répétition espacée** (boîtes de Leitner) : un verbe est « maîtrisé » après 3 bonnes réponses sans indice, à des moments différents.
+- **Apprentissage par régularités** : 7 familles de verbes détectées automatiquement, même dans tes propres listes.
+- **Rétroaction immédiate et explicative** : correction, famille du verbe, repère en contexte (« Yesterday, I went · I have gone ») et prononciation 🔊.
+- **État d'esprit de croissance** : messages centrés sur le progrès, aucun classement public entre élèves.
+- **Accessibilité** : navigation au clavier (Entrée passe au champ suivant), mode « Aa » de lecture facilitée, mode sombre, animations réduites si l'appareil le demande.
+
+## ❓ Dépannage
+| Problème | Solution |
+|---|---|
+| « 📴 Local » s'affiche | L'URL n'est pas configurée dans `js/config.js`. |
+| « NIP incorrect » ou « Aucun NIP configuré » | Dans la feuille : menu *Verbes irréguliers › Définir ou changer le NIP*. |
+| Les résultats n'arrivent pas | Vérifie que le déploiement est bien « Qui a accès : **Tout le monde** » et que l'URL se termine par `/exec`. |
+| Une modification de `Code.gs` ne s'applique pas | Publie une **nouvelle version** du déploiement (voir l'étape 1). |
+| Pas de son 🔊 | La voix dépend du navigateur. Chrome et Edge ont des voix anglaises par défaut. |

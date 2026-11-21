@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Espace enseignant — IrregularVerbs</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#5b5bf0">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="entete">
+    <a class="marque" href="index.html" style="color:inherit;text-decoration:none">
+      <span class="logo" aria-hidden="true">V</span>
+      <span class="marque-txt">Irregular<b>Verbs</b> · Enseignant</span>
+    </a>
+    <div class="entete-actions">
+      <button class="btn btn-fantome" id="btn-deconnexion" hidden>Se déconnecter</button>
+      <button class="btn-icone" id="btn-lecture" aria-pressed="false" aria-label="Lecture facilitée" title="Lecture facilitée">Aa</button>
+      <button class="btn-icone" id="btn-theme">🌙</button>
+    </div>
+  </header>
+
+  <main id="principal" tabindex="-1">
+
+    <!-- Avertissement si non configuré -->
+    <div class="carte" id="non-configure" hidden>
+      <h1>Configuration requise</h1>
+      <p>L'espace enseignant a besoin de la feuille Google. Ouvre <code>js/config.js</code> et remplace <code>VOTRE_URL_ICI</code> par l'URL de ton application Web Apps Script (voir le guide <code>README.md</code>).</p>
+      <p class="muted">En attendant, l'application élève fonctionne en mode local.</p>
+    </div>
+
+    <!-- Connexion NIP -->
+    <section id="ecran-nip" hidden>
+      <form class="carte carte-nip" id="form-nip" autocomplete="off">
+        <div style="font-size:2.4rem" aria-hidden="true">🔐</div>
+        <h1>Espace enseignant</h1>
+        <p class="muted">Entre ton NIP. Il est vérifié par la feuille Google, jamais stocké dans le site.</p>
+        <label class="champ" style="margin-top:1rem">
+          <span class="saut-visuel">NIP</span>
+          <input id="in-nip" class="nip-input" type="password" inputmode="numeric" maxlength="8" autocomplete="current-password" aria-label="NIP">
+        </label>
+        <p class="erreur" id="erreur-nip" role="alert"></p>
+        <button class="btn btn-principal btn-large" type="submit" id="btn-nip">Entrer</button>
+      </form>
+    </section>
+
+    <!-- Tableau de bord -->
+    <section id="ecran-tdb" hidden>
+      <div class="barre-ecran" style="justify-content:space-between">
+        <h1>Tableau de bord</h1>
+        <button class="btn btn-secondaire" id="btn-actualiser">↻ Actualiser</button>
+      </div>
+
+      <nav class="onglets" role="tablist">
+        <button role="tab" aria-selected="true" data-onglet="eleves">👥 Élèves</button>
+        <button role="tab" aria-selected="false" data-onglet="verbes-diff">🔥 Verbes difficiles</button>
+        <button role="tab" aria-selected="false" data-onglet="liste">📚 Listes de verbes</button>
+        <button role="tab" aria-selected="false" data-onglet="gestion">⚙️ Gestion</button>
+      </nav>
+
+      <div class="filtres" id="filtres">
+        <label class="champ"><span>Groupe</span><select id="f-groupe"></select></label>
+        <label class="champ"><span>Bloc</span>
+          <select id="f-bloc"><option value="">Tous les blocs</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+        <label class="champ"><span>Activité</span>
+          <select id="f-mode"><option value="">Toutes</option><option value="quiz">Quiz</option><option value="entrainement">Entraînement</option><option value="sprint">Sprint</option><option value="difficiles">Verbes difficiles</option></select></label>
+        <label class="champ"><span>Période</span>
+          <select id="f-periode"><option value="7">7 derniers jours</option><option value="30" selected>30 derniers jours</option><option value="0">Depuis le début</option></select></label>
+      </div>
+
+      <!-- Onglet élèves -->
+      <div data-panneau="eleves">
+        <div class="kpis" id="kpis"></div>
+        <div class="table-wrap"><table id="table-eleves"></table></div>
+        <p class="aide">Moyenne : quiz, entraînements et verbes difficiles (le sprint est compté à part). Clique sur un en-tête pour trier, ou sur un élève pour voir toutes ses tentatives.</p>
+      </div>
+
+      <!-- Onglet verbes difficiles -->
+      <div data-panneau="verbes-diff" hidden>
+        <p class="muted">Taux d'erreur par verbe : à cibler en classe (mini-leçon, phrases à l'oral, chanson…).</p>
+        <div class="table-wrap"><table id="table-diff"></table></div>
+        <h2 style="margin-top:1.5rem">Carte de chaleur par groupe</h2>
+        <p class="muted petit">Les 15 verbes les plus ratés. Plus la case est rouge, plus le groupe a de difficulté.</p>
+        <div class="table-wrap"><table id="table-chaleur" class="chaleur"></table></div>
+      </div>
+
+      <!-- Onglet listes -->
+      <div data-panneau="liste" hidden>
+        <div class="carte conseil">
+          Une ligne par verbe : <code>infinitif ; passé ; participe passé ; français</code>. Sépare les variantes acceptées par <code>/</code> (ex. <code>learn ; learned/learnt ; learned/learnt ; apprendre</code>).
+          Les changements s'appliquent aux élèves à leur prochaine ouverture de l'application.
+        </div>
+        <div class="grille-editeur" id="editeurs"></div>
+        <p class="erreur" id="erreur-verbes" role="alert"></p>
+        <div class="actions">
+          <button class="btn btn-fantome" id="btn-verbes-defaut">Recharger la liste par défaut</button>
+          <button class="btn btn-principal" id="btn-verbes-sauver">💾 Enregistrer les listes</button>
+        </div>
+      </div>
+
+      <!-- Onglet gestion -->
+      <div data-panneau="gestion" hidden>
+        <div class="section-gestion">
+          <div class="carte">
+            <h2>📤 Exporter</h2>
+            <p class="muted">Télécharge les résultats affichés (selon les filtres) en CSV, lisible dans Excel ou Google Sheets.</p>
+            <button class="btn btn-secondaire" id="btn-csv">Télécharger le CSV</button>
+          </div>
+          <div class="carte zone-danger">
+            <h2>🗑️ Supprimer les données d'un groupe</h2>
+            <p class="muted">Efface définitivement tous les résultats du groupe dans la feuille Google (ex. en fin d'année).</p>
+            <label class="champ"><span>Groupe</span><select id="sup-groupe"></select></label>
+            <label class="champ" style="margin-top:.6rem"><span>Pour confirmer, retape le numéro du groupe</span><input id="sup-confirm" inputmode="numeric"></label>
+            <div class="actions"><button class="btn btn-danger" id="btn-supprimer" disabled>Supprimer</button></div>
+          </div>
+          <div class="carte">
+            <h2>🔑 Changer le NIP</h2>
+            <label class="champ"><span>Nouveau NIP (4 à 8 chiffres)</span><input id="nip-nouveau" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></label>
+            <label class="champ" style="margin-top:.6rem"><span>Confirme le nouveau NIP</span><input id="nip-confirm" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></label>
+            <div class="actions"><button class="btn btn-secondaire" id="btn-nip-changer">Changer le NIP</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Fiche détaillée d'un élève -->
+  <dialog id="detail-eleve" aria-labelledby="detail-titre">
+    <div class="detail-tete">
+      <div>
+        <h2 id="detail-titre"></h2>
+        <p class="muted petit" id="detail-sous-titre"></p>
+      </div>
+      <button class="btn-icone" id="detail-fermer" aria-label="Fermer">✕</button>
+    </div>
+    <div id="detail-contenu"></div>
+  </dialog>
+
+  <style>.saut-visuel{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}</style>
+  <script src="js/config.js"></script>
+  <script src="js/verbes-defaut.js"></script>
+  <script src="js/commun.js"></script>
+  <script src="js/enseignant.js"></script>
+</body>
+</html>
