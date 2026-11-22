@@ -723,6 +723,7 @@
   $('#retro-phrase').addEventListener('click', (e) => { const a = e.target.closest('[data-dire]'); if (a) VI.parler(a.dataset.dire); });
 
   /* ----- Chasse aux erreurs ----- */
+  // Pour chaque phrase, l'élève choisit explicitement « ✓ Correct » ou « ✗ À corriger » (et écrit alors la bonne forme).
   function nouvelleManche() {
     const s = session;
     const choisies = [], vus = new Set();
@@ -732,34 +733,86 @@
     q = { type: 'chasse', verifie: false, items: choisies.map((p, i) => {
       let affiche = VI.premiere(p.r), faux = false;
       if (avecErreur.has(i)) { const f = VI.fausseFormePhrase(p, p.verbe); if (f) { affiche = f; faux = true; } }
-      return { p, affiche, faux, signale: false };
+      return { p, affiche, faux, choix: null };
     }) };
     progression();
     $('#liste-chasse').innerHTML = q.items.map((it, i) => `<li data-i="${i}">
-      <p class="phrase-chasse" lang="en">${esc(it.p.s.split('___')[0])}<button type="button" class="chip-verbe" data-i="${i}" aria-pressed="false" title="Clique si ce verbe est mal conjugué">${esc(it.affiche)}</button>${esc(it.p.s.split('___')[1])}</p>
-      <div class="correction-chasse" hidden><label>Correction : <input type="text" data-i="${i}" lang="en" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="bonne forme"></label></div>
+      <div class="ligne-chasse">
+        <p class="phrase-chasse" lang="en">${esc(it.p.s.split('___')[0])}<span class="verbe-chasse">${esc(it.affiche)}</span>${esc(it.p.s.split('___')[1])}</p>
+        <div class="choix-chasse" role="group" aria-label="Phrase ${i + 1} : le verbe est-il correct ?">
+          <button type="button" class="btn-choix ok" data-choix="ok" data-i="${i}" aria-pressed="false">✓ Correct</button>
+          <button type="button" class="btn-choix faux" data-choix="faux" data-i="${i}" aria-pressed="false">✗ À corriger</button>
+        </div>
+      </div>
+      <div class="correction-chasse" hidden>
+        <label>Bonne forme : <input type="text" data-i="${i}" lang="en" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="écris la bonne forme"></label>
+        <span class="avert-chasse" aria-live="polite"></span>
+      </div>
       <div class="retro-chasse"></div></li>`).join('');
     $('#retro-chasse').className = 'retro'; $('#retro-chasse').innerHTML = '';
-    $('#btn-valider-chasse').innerHTML = 'Vérifier <kbd>Entrée</kbd>';
     $('#form-chasse').classList.remove('anim-ok', 'anim-ko');
-    const premier = $('#liste-chasse .chip-verbe'); if (premier) premier.focus();
+    majBoutonChasse();
+    const premier = $('#liste-chasse .btn-choix'); if (premier) premier.focus();
   }
+
+  // État du bouton Vérifier : il faut une décision pour chaque phrase et une correction pour chaque « À corriger »
+  function etatChasse() {
+    let decides = 0, manquantes = 0, identiques = 0;
+    q.items.forEach((it, i) => {
+      if (it.choix) decides++;
+      const li = $(`#liste-chasse li[data-i="${i}"]`);
+      const inp = li.querySelector('input'), avert = li.querySelector('.avert-chasse');
+      avert.textContent = '';
+      if (it.choix === 'faux') {
+        const v = inp.value.trim();
+        if (!v) manquantes++;
+        else if (VI.norm(v) === VI.norm(it.affiche)) { identiques++; avert.textContent = 'C\'est la même forme ! Si ce verbe est correct, choisis « ✓ Correct ».'; }
+      }
+    });
+    return { decides, manquantes, identiques };
+  }
+  function majBoutonChasse() {
+    if (!q || q.type !== 'chasse' || q.verifie) return;
+    const e = etatChasse(), btn = $('#btn-valider-chasse'), n = q.items.length;
+    if (e.decides < n) { btn.disabled = true; btn.innerHTML = `Décide pour chaque phrase (${e.decides}/${n})`; }
+    else if (e.manquantes) { btn.disabled = true; btn.innerHTML = `Écris la bonne forme (${e.manquantes} manquante${e.manquantes > 1 ? 's' : ''})`; }
+    else if (e.identiques) { btn.disabled = true; btn.innerHTML = 'Vérifie tes corrections'; }
+    else { btn.disabled = false; btn.innerHTML = 'Vérifier <kbd>Entrée</kbd>'; }
+  }
+
   $('#liste-chasse').addEventListener('click', (e) => {
-    const b = e.target.closest('.chip-verbe'); if (!b || !q || q.type !== 'chasse' || q.verifie) return;
-    const it = q.items[b.dataset.i];
-    it.signale = !it.signale;
-    b.setAttribute('aria-pressed', String(it.signale));
-    const zone = b.closest('li').querySelector('.correction-chasse');
-    zone.hidden = !it.signale;
-    if (it.signale) zone.querySelector('input').focus();
+    const b = e.target.closest('.btn-choix'); if (!b || !q || q.type !== 'chasse' || q.verifie) return;
+    const i = Number(b.dataset.i), it = q.items[i];
+    it.choix = b.dataset.choix;
+    const li = b.closest('li');
+    li.querySelectorAll('.btn-choix').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    li.classList.toggle('a-corriger', it.choix === 'faux');
+    li.classList.toggle('juge-correct', it.choix === 'ok');
+    const zone = li.querySelector('.correction-chasse');
+    zone.hidden = it.choix !== 'faux';
+    if (it.choix === 'faux') zone.querySelector('input').focus();
+    else { // passe à la prochaine phrase sans décision
+      const suivant = q.items.findIndex((x, k) => k > i && !x.choix);
+      if (suivant >= 0) $(`#liste-chasse li[data-i="${suivant}"] .btn-choix`).focus();
+    }
+    majBoutonChasse();
   });
+  $('#liste-chasse').addEventListener('input', majBoutonChasse);
+
   $('#form-chasse').addEventListener('submit', (e) => {
     e.preventDefault(); if (!q || q.type !== 'chasse') return;
     if (q.verifie) return suivante();
-    // Entrée dans une case de correction : on vérifie seulement si on vient du bouton
-    if (document.activeElement && document.activeElement.matches('#liste-chasse input')) { $('#btn-valider-chasse').focus(); return; }
-    verifierChasse();
+    // Entrée dans une case de correction : on passe à la prochaine phrase sans décision, ou au bouton
+    const actif = document.activeElement;
+    if (actif && actif.matches('#liste-chasse input')) {
+      const i = Number(actif.dataset.i);
+      const suivant = q.items.findIndex((x, k) => k > i && !x.choix);
+      if (suivant >= 0) { $(`#liste-chasse li[data-i="${suivant}"] .btn-choix`).focus(); return; }
+      if ($('#btn-valider-chasse').disabled) return;
+    }
+    if (!$('#btn-valider-chasse').disabled) verifierChasse();
   });
+
   function verifierChasse() {
     const s = session;
     q.verifie = true;
@@ -768,25 +821,26 @@
       const li = $(`#liste-chasse li[data-i="${i}"]`);
       const inp = li.querySelector('input');
       inp.readOnly = true;
+      li.querySelectorAll('.btn-choix').forEach((x) => { x.disabled = true; });
       const bonne = esc(VI.variantes(it.p.r).join(' / '));
       const expl = `<span class="tag-forme">${esc(VI.LIBELLE_FORME[it.p.f])}</span> ${esc(VI.explication(it.p.f, it.p.c))}`;
       let p = 0, m = 0, msg = '', classe = '';
       if (it.faux) {
         total++; m = 2;
-        const corr = it.signale && VI.verifier('passe', inp.value, it.p.r);
-        if (it.signale) { p++; trouvees++; }
+        const repere = it.choix === 'faux';
+        const corr = repere && VI.verifier('passe', inp.value, it.p.r);
+        if (repere) { p++; trouvees++; }
         if (corr) p++;
         if (corr) { classe = 'ok'; msg = `✅ Bien vu et bien corrigé : <b>${bonne}</b>`; }
-        else if (it.signale) { classe = 'moyen'; msg = `🟠 Bien repéré ! La bonne forme est <b>${bonne}</b>. ${expl}`; }
-        else { classe = 'ko'; msg = `❌ Erreur non repérée : « ${esc(it.affiche)} » → <b>${bonne}</b>. ${expl}`; }
+        else if (repere) { classe = 'moyen'; msg = `🟠 Bien repéré ! Mais la bonne forme est <b>${bonne}</b>. ${expl}`; }
+        else { classe = 'ko'; msg = `❌ Il y avait une erreur : « ${esc(it.affiche)} » → <b>${bonne}</b>. ${expl}`; }
       } else {
         m = 1;
-        if (it.signale) { classe = 'ko'; msg = `⚠️ Ce verbe était correct ! ${expl}`; }
-        else { p = 1; classe = 'ok'; msg = '✓ Correct'; }
+        if (it.choix === 'faux') { classe = 'ko'; msg = `⚠️ Ce verbe était déjà correct : il fallait choisir « ✓ Correct ». ${expl}`; }
+        else { p = 1; classe = 'ok'; msg = '✅ Oui, ce verbe était correct.'; }
       }
       pts += p; max += m;
       li.classList.add(classe);
-      li.querySelector('.chip-verbe').disabled = true;
       li.querySelector('.retro-chasse').innerHTML = `<p>${msg}</p>`;
       s.resultats.push({ base: VI.premiere(it.p.verbe.base), tout: p === m, indice: false });
     });
@@ -796,8 +850,10 @@
     animer($('#form-chasse'), pts === max);
     $('#retro-chasse').className = 'retro visible ' + (pts === max ? 'ok' : 'ko');
     $('#retro-chasse').innerHTML = `<p class="retro-titre">${pts === max ? '🕵️ Manche parfaite !' : '🔎 ' + trouvees + ' erreur' + (trouvees > 1 ? 's' : '') + ' repérée' + (trouvees > 1 ? 's' : '') + ' sur ' + total + '.'} <span class="xp">+${gain} XP</span></p>`;
-    $('#btn-valider-chasse').innerHTML = (s.index + 1 >= s.total ? 'Voir mes résultats' : 'Manche suivante →') + ' <kbd>Entrée</kbd>';
-    $('#btn-valider-chasse').focus();
+    const btn = $('#btn-valider-chasse');
+    btn.disabled = false;
+    btn.innerHTML = (s.index + 1 >= s.total ? 'Voir mes résultats' : 'Manche suivante →') + ' <kbd>Entrée</kbd>';
+    btn.focus();
   }
 
   /* ----- Vrai ou faux éclair ----- */
