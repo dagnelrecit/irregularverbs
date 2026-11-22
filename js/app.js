@@ -29,14 +29,14 @@
   const GROUPES_MODES = { apprendre: '🌱 Apprendre', contexte: '💬 En contexte', defis: '🏆 Défis' };
 
   const BADGES = [
-    { id: 'premier',   icone: '👣', nom: 'Premier pas', desc: 'Terminer une première activité' },
-    { id: 'serie10',   icone: '🔥', nom: '10 de suite', desc: '10 bonnes réponses consécutives sans indice' },
-    { id: 'eclair',    icone: '⚡', nom: 'Éclair',      desc: 'Au moins 15 verbes réussis en sprint' },
-    { id: 'parfait',   icone: '💎', nom: 'Sans faute',  desc: 'Un quiz à 100 % sans indice' },
-    { id: 'constance', icone: '📅', nom: 'Constance',   desc: 'Pratiquer 3 jours de suite' },
-    { id: 'contexte',  icone: '✍️', nom: 'Bon temps',   desc: 'Phrases à compléter : 100 % sans indice' },
-    { id: 'detective', icone: '🕵️', nom: 'Détective',   desc: 'Chasse aux erreurs : 100 %' },
-    { id: 'lynx',      icone: '👁️', nom: 'Œil de lynx', desc: 'Vrai ou faux : 20 bonnes réponses ou plus' },
+    { id: 'premier',   icone: '👣', nom: 'Premier pas', desc: 'Terminer une première activité au complet' },
+    { id: 'serie10',   icone: '🔥', nom: '10 de suite', desc: '10 bonnes réponses consécutives, sans indice' },
+    { id: 'eclair',    icone: '⚡', nom: 'Éclair',      desc: 'Au moins 15 verbes réussis dans un sprint de 60 s' },
+    { id: 'parfait',   icone: '💎', nom: 'Sans faute',  desc: `Un quiz complet (${CONFIG.questionsQuiz} questions) à 100 %, sans indice` },
+    { id: 'constance', icone: '📅', nom: 'Constance',   desc: 'Terminer au moins une activité 3 jours de suite' },
+    { id: 'contexte',  icone: '✍️', nom: 'Bon temps',   desc: `Réussir les ${C.questionsPhrases} phrases à compléter, sans faute ni indice` },
+    { id: 'detective', icone: '🕵️', nom: 'Détective',   desc: `Réussir les ${C.manchesChasse} manches d'une chasse aux erreurs, sans faute` },
+    { id: 'lynx',      icone: '👁️', nom: 'Œil de lynx', desc: 'Vrai ou faux : au moins 20 bonnes réponses et 90 % de réussite' },
     { id: 'maitre1',   icone: '🥇', nom: 'Maître · bloc 1', desc: 'Maîtriser tous les verbes du bloc 1' },
     { id: 'maitre2',   icone: '🥇', nom: 'Maître · bloc 2', desc: 'Maîtriser tous les verbes du bloc 2' },
     { id: 'maitre3',   icone: '🥇', nom: 'Maître · bloc 3', desc: 'Maîtriser tous les verbes du bloc 3' },
@@ -417,7 +417,7 @@
     $('#compteur').textContent = '⏱ ' + Math.ceil(reste / 1000) + ' s · ' + session.points + ' ✓';
     $('#progression-barre').style.width = (reste / session.dureeMs) * 100 + '%';
     $('#progression-barre').classList.toggle('urgent', reste < 10000);
-    if (reste <= 0) terminer();
+    if (reste <= 0) terminer(true);
   }
 
   /* ---------------- Question ---------------- */
@@ -573,8 +573,8 @@
     const s = session; if (!s) return;
     clearTimeout(s.auto);
     s.index++;
-    if (s.fin && Date.now() >= s.fin) return terminer();
-    if (s.index >= s.total) return terminer();
+    if (s.fin && Date.now() >= s.fin) return terminer(true);
+    if (s.index >= s.total) return terminer(true);
     if (s.type === 'phrase') nouvellePhrase();
     else if (s.type === 'chasse') nouvelleManche();
     else if (s.type === 'vf') nouveauVF();
@@ -583,7 +583,7 @@
 
   $('#btn-quitter').addEventListener('click', () => {
     if (!session) return afficherAccueil();
-    if (session.resultats.length) terminer();
+    if (session.resultats.length) terminer(false); // activité interrompue : résultats envoyés, mais pas de badge
     else { arreterSession(); afficherAccueil(); }
   });
 
@@ -891,7 +891,7 @@
     $('#btn-vrai').disabled = true; $('#btn-faux').disabled = true;
     if (!ok) $('#vf-correction').innerHTML = (q.vrai ? 'C\'était vrai : ' : 'Correct : ') + `<b class="mono">${esc([q.verbe.base, q.verbe.passe, q.verbe.participe].map((x) => VI.variantes(x).join('/')).join(' → '))}</b>`;
     tic();
-    s.auto = setTimeout(() => { if (session === s) { if (Date.now() >= s.fin) terminer(); else nouveauVF(); } }, ok ? 380 : 1700);
+    s.auto = setTimeout(() => { if (session === s) { if (Date.now() >= s.fin) terminer(true); else nouveauVF(); } }, ok ? 380 : 1700);
   }
   $('#btn-vrai').addEventListener('click', () => repondreVF(true));
   $('#btn-faux').addEventListener('click', () => repondreVF(false));
@@ -909,7 +909,9 @@
   });
 
   /* ---------------- Fin d'activité ---------------- */
-  function terminer() {
+  // complet = l'activité est allée jusqu'au bout (toutes les questions ou tout le temps).
+  // Une activité interrompue avec « Quitter » est enregistrée, mais ne donne ni badge, ni record, ni jour de série.
+  function terminer(complet) {
     const s = session; if (!s) return;
     clearInterval(s.minuterie); clearTimeout(s.auto);
     session = null; q = null;
@@ -922,26 +924,29 @@
 
     // Profil
     profil.xp += s.xp;
-    if (!profil.jours.includes(VI.aujourdhui())) profil.jours.push(VI.aujourdhui());
+    if (complet && !profil.jours.includes(VI.aujourdhui())) profil.jours.push(VI.aujourdhui());
     profil.jours = profil.jours.slice(-60);
     let record = false;
     const chrono = s.mode === 'sprint' || s.mode === 'vraifaux';
     const cleRecord = s.mode === 'vraifaux' ? 'vf' + s.bloc : s.bloc;
-    if (chrono && s.points > (profil.sprint[cleRecord] || 0)) { profil.sprint[cleRecord] = s.points; record = s.points > 0; }
+    if (complet && chrono && s.points > (profil.sprint[cleRecord] || 0)) { profil.sprint[cleRecord] = s.points; record = s.points > 0; }
     profil.historique.push({ d: Date.now(), bloc: s.bloc, mode: s.mode, pct });
     profil.historique = profil.historique.slice(-50);
 
     // Badges
     const nouveaux = [];
     const gagner = (id) => { if (!profil.badges.includes(id)) { profil.badges.push(id); nouveaux.push(BADGES.find((b) => b.id === id)); } };
-    gagner('premier');
-    if (s.serieMax >= 10) gagner('serie10');
-    if (s.mode === 'sprint' && s.points >= 15) gagner('eclair');
-    if (s.mode === 'quiz' && pct === 100 && !s.resultats.some((r) => r.indice)) gagner('parfait');
-    if (s.mode === 'phrases' && pct === 100 && !s.resultats.some((r) => r.indice)) gagner('contexte');
-    if (s.mode === 'erreurs' && pct === 100) gagner('detective');
-    if (s.mode === 'vraifaux' && s.points >= 20) gagner('lynx');
-    if (serieJours() >= 3) gagner('constance');
+    const sansIndice = !s.resultats.some((r) => r.indice);
+    if (complet) {
+      gagner('premier');
+      if (s.mode === 'sprint' && s.points >= 15) gagner('eclair');
+      if (s.mode === 'quiz' && s.resultats.length >= CONFIG.questionsQuiz && pct === 100 && sansIndice) gagner('parfait');
+      if (s.mode === 'phrases' && s.resultats.length >= C.questionsPhrases && pct === 100 && sansIndice) gagner('contexte');
+      if (s.mode === 'erreurs' && s.index + 1 >= C.manchesChasse && pct === 100) gagner('detective');
+      if (s.mode === 'vraifaux' && s.points >= 20 && pct >= 90) gagner('lynx');
+      if (serieJours() >= 3) gagner('constance');
+    }
+    if (s.serieMax >= 10) gagner('serie10'); // 10 bonnes réponses de suite, sans indice : mérité même si on quitte ensuite
     [1, 2, 3, 4].forEach((b) => { const m = maitrise(b); if (m.total && m.ok === m.total) gagner('maitre' + b); });
     sauverProfil();
 
@@ -963,7 +968,7 @@
       ? (record ? 'Nouveau record ! 🏆' : s.points + ' bonne' + (s.points > 1 ? 's' : '') + ' réponse' + (s.points > 1 ? 's' : '') + ' en ' + Math.round(s.dureeMs / 1000) + ' s')
       : pct >= 90 ? 'Excellent travail ! 🌟' : pct >= 75 ? 'Très bien ! 👏' : pct >= 50 ? 'Beau progrès ! 💪' : 'Chaque essai te fait progresser 🌱';
     const E = etatApres;
-    $('#res-message').innerHTML = (gain > 0 ? `<b>+${pluriel(gain, 'verbe')} maîtrisé${gain > 1 ? 's' : ''} ! 🎉</b><br>` : '') +
+    $('#res-message').innerHTML = (complet ? '' : '<span class="note-interrompue">⏸️ Activité interrompue : tes réponses comptent pour ta progression, mais les badges, les records et les jours de série se gagnent seulement en terminant l\'activité au complet.</span>') + (gain > 0 ? `<b>+${pluriel(gain, 'verbe')} maîtrisé${gain > 1 ? 's' : ''} ! 🎉</b><br>` : '') +
       `<span class="etat-titre">Bloc ${s.bloc} : ta progression</span>${barreEtat(E)}
       <span class="legende-etat">
         <span><i class="pt seg-ok"></i><b>${E.ok}</b> maîtrisé${E.ok > 1 ? 's' : ''}</span>
