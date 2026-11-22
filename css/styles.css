@@ -415,6 +415,20 @@ mark { background: color-mix(in srgb, var(--warn) 35%, transparent); color: inhe
 .liste-chasse li.ko { border-color: var(--ko); background: var(--ko-soft); }
 .liste-chasse li.moyen { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, var(--surface)); }
 
+/* Chasse aux erreurs : choix explicite par phrase */
+.ligne-chasse { display: flex; align-items: center; justify-content: space-between; gap: .6rem 1rem; flex-wrap: wrap; }
+.ligne-chasse .phrase-chasse { flex: 1 1 320px; }
+.verbe-chasse { font-family: var(--mono); font-weight: 800; padding: .05em .45em; margin: 0 .15em; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); }
+.a-corriger .verbe-chasse { text-decoration: line-through; text-decoration-color: var(--ko); }
+.choix-chasse { display: flex; gap: .35rem; flex: 0 0 auto; }
+.btn-choix { border: 2px solid var(--border); background: var(--surface); border-radius: 99px; padding: .35em .85em; font-weight: 700; font-size: .88rem; color: var(--muted); transition: all .15s; }
+.btn-choix:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.btn-choix.ok[aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: #fff; }
+.btn-choix.faux[aria-pressed="true"] { background: var(--ko); border-color: var(--ko); color: #fff; }
+.btn-choix:disabled { cursor: default; opacity: .85; }
+.avert-chasse { display: block; color: var(--ko); font-size: .85rem; font-weight: 600; margin-top: .3rem; }
+#btn-valider-chasse:disabled { opacity: .55; }
+
 /* ---------- Vrai ou faux éclair ---------- */
 .carte-vf { text-align: center; user-select: none; touch-action: pan-y; transition: transform .15s; }
 .vf-trio { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: .3rem .6rem; font-size: clamp(1.7rem, 6vw, 2.6rem); font-weight: 800; margin: 1rem 0 .3rem; letter-spacing: -.02em; }
