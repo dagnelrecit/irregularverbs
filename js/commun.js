@@ -165,7 +165,7 @@ VI.toast = function (html, type = '') {
   if (!zone) { zone = document.createElement('div'); zone.id = 'toasts'; zone.setAttribute('aria-live', 'polite'); document.body.appendChild(zone); }
   const t = document.createElement('div');
   t.className = 'toast ' + type;
-  t.innerHTML = html;
+  t.innerHTML = '<span>' + html + '</span>';
   zone.appendChild(t);
   setTimeout(() => t.classList.add('sortie'), 3200);
   setTimeout(() => t.remove(), 3700);

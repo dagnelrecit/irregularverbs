@@ -16,6 +16,7 @@
       <span class="marque-txt">Irregular<b>Verbs</b> · Enseignant</span>
     </a>
     <div class="entete-actions">
+      <span class="pastille" id="qui" hidden></span>
       <button class="btn btn-fantome" id="btn-deconnexion" hidden>Se déconnecter</button>
       <button class="btn-icone" id="btn-lecture" aria-pressed="false" aria-label="Lecture facilitée" title="Lecture facilitée">Aa</button>
       <button class="btn-icone" id="btn-theme">🌙</button>
@@ -24,40 +25,42 @@
 
   <main id="principal" tabindex="-1">
 
-    <!-- Avertissement si non configuré -->
     <div class="carte" id="non-configure" hidden>
       <h1>Configuration requise</h1>
       <p>L'espace enseignant a besoin de la feuille Google. Ouvre <code>js/config.js</code> et remplace <code>VOTRE_URL_ICI</code> par l'URL de ton application Web Apps Script (voir le guide <code>README.md</code>).</p>
       <p class="muted">En attendant, l'application élève fonctionne en mode local.</p>
     </div>
 
-    <!-- Connexion NIP -->
+    <!-- Connexion -->
     <section id="ecran-nip" hidden>
-      <form class="carte carte-nip" id="form-nip" autocomplete="off">
+      <form class="carte carte-nip" id="form-nip" autocomplete="on">
         <div style="font-size:2.4rem" aria-hidden="true">🔐</div>
         <h1>Espace enseignant</h1>
-        <p class="muted">Entre ton NIP. Il est vérifié par la feuille Google, jamais stocké dans le site.</p>
-        <label class="champ" style="margin-top:1rem">
-          <span class="saut-visuel">NIP</span>
-          <input id="in-nip" class="nip-input" type="password" inputmode="numeric" maxlength="8" autocomplete="current-password" aria-label="NIP">
-        </label>
+        <p class="muted">Connecte-toi avec ton identifiant et ton NIP.</p>
+        <label class="champ" style="margin-top:1rem;text-align:left"><span>Identifiant</span>
+          <input id="in-id" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="ex. dcyr"></label>
+        <label class="champ" style="margin-top:.7rem;text-align:left"><span>NIP</span>
+          <input id="in-nip" class="nip-input" type="password" inputmode="numeric" maxlength="8" autocomplete="current-password"></label>
         <p class="erreur" id="erreur-nip" role="alert"></p>
         <button class="btn btn-principal btn-large" type="submit" id="btn-nip">Entrer</button>
+        <p class="aide">Pas de compte ? Demande-le à l'administrateur de l'application.</p>
       </form>
     </section>
 
     <!-- Tableau de bord -->
     <section id="ecran-tdb" hidden>
       <div class="barre-ecran" style="justify-content:space-between">
-        <h1>Tableau de bord</h1>
+        <h1 id="titre-tdb">Tableau de bord</h1>
         <button class="btn btn-secondaire" id="btn-actualiser">↻ Actualiser</button>
       </div>
 
       <nav class="onglets" role="tablist">
         <button role="tab" aria-selected="true" data-onglet="eleves">👥 Élèves</button>
         <button role="tab" aria-selected="false" data-onglet="verbes-diff">🔥 Verbes difficiles</button>
-        <button role="tab" aria-selected="false" data-onglet="liste">📚 Listes de verbes</button>
-        <button role="tab" aria-selected="false" data-onglet="gestion">⚙️ Gestion</button>
+        <button role="tab" aria-selected="false" data-onglet="groupes" id="onglet-groupes">🏫 Mes groupes</button>
+        <button role="tab" aria-selected="false" data-onglet="liste" data-admin>📚 Listes de verbes</button>
+        <button role="tab" aria-selected="false" data-onglet="enseignants" data-admin>🧑‍🏫 Enseignants</button>
+        <button role="tab" aria-selected="false" data-onglet="gestion">⚙️ Mon compte</button>
       </nav>
 
       <div class="filtres" id="filtres">
@@ -70,14 +73,14 @@
           <select id="f-periode"><option value="7">7 derniers jours</option><option value="30" selected>30 derniers jours</option><option value="0">Depuis le début</option></select></label>
       </div>
 
-      <!-- Onglet élèves -->
+      <!-- Élèves -->
       <div data-panneau="eleves">
         <div class="kpis" id="kpis"></div>
         <div class="table-wrap"><table id="table-eleves"></table></div>
         <p class="aide">Moyenne : quiz, entraînements et verbes difficiles (le sprint est compté à part). Clique sur un en-tête pour trier, ou sur un élève pour voir toutes ses tentatives.</p>
       </div>
 
-      <!-- Onglet verbes difficiles -->
+      <!-- Verbes difficiles -->
       <div data-panneau="verbes-diff" hidden>
         <p class="muted">Taux d'erreur par verbe : à cibler en classe (mini-leçon, phrases à l'oral, chanson…).</p>
         <div class="table-wrap"><table id="table-diff"></table></div>
@@ -86,11 +89,27 @@
         <div class="table-wrap"><table id="table-chaleur" class="chaleur"></table></div>
       </div>
 
-      <!-- Onglet listes -->
+      <!-- Groupes -->
+      <div data-panneau="groupes" hidden>
+        <div class="carte" style="margin-bottom:1rem">
+          <h2>➕ Créer un groupe</h2>
+          <p class="muted petit">Les élèves entreront ce numéro à la connexion (ex. groupe 201 → code <b>201-AB</b>). Un numéro ne peut appartenir qu'à un seul enseignant.</p>
+          <div class="filtres" style="margin:0">
+            <label class="champ"><span>Numéro du groupe</span><input id="nouveau-groupe" inputmode="numeric" maxlength="4" placeholder="201"></label>
+            <label class="champ" data-admin><span>Propriétaire</span><select id="nouveau-proprio"></select></label>
+            <button class="btn btn-principal" id="btn-creer-groupe" style="flex:0 0 auto">Créer le groupe</button>
+          </div>
+        </div>
+        <div class="table-wrap"><table id="table-groupes"></table></div>
+        <p class="aide">« Effacer les résultats » garde le groupe (ex. nouvelle étape). « Supprimer le groupe » efface le groupe et tous ses résultats. Chaque action demande une confirmation.</p>
+        <div id="zone-orphelins" data-admin></div>
+      </div>
+
+      <!-- Listes (admin) -->
       <div data-panneau="liste" hidden>
         <div class="carte conseil">
           Une ligne par verbe : <code>infinitif ; passé ; participe passé ; français</code>. Sépare les variantes acceptées par <code>/</code> (ex. <code>learn ; learned/learnt ; learned/learnt ; apprendre</code>).
-          Les changements s'appliquent aux élèves à leur prochaine ouverture de l'application.
+          Cette liste est commune à tous les groupes. Les changements s'appliquent à la prochaine ouverture de l'application.
         </div>
         <div class="grille-editeur" id="editeurs"></div>
         <p class="erreur" id="erreur-verbes" role="alert"></p>
@@ -100,7 +119,22 @@
         </div>
       </div>
 
-      <!-- Onglet gestion -->
+      <!-- Enseignants (admin) -->
+      <div data-panneau="enseignants" hidden>
+        <div class="carte" style="margin-bottom:1rem">
+          <h2>➕ Ajouter un enseignant</h2>
+          <div class="filtres" style="margin:0">
+            <label class="champ"><span>Nom</span><input id="ens-nom" placeholder="Marie Tremblay" maxlength="60"></label>
+            <label class="champ"><span>Identifiant</span><input id="ens-id" placeholder="mtremblay" maxlength="20" autocapitalize="off" spellcheck="false"></label>
+            <label class="champ"><span>NIP de départ</span><input id="ens-nip" inputmode="numeric" maxlength="8" placeholder="4 à 8 chiffres"></label>
+            <button class="btn btn-principal" id="btn-ajouter-ens" style="flex:0 0 auto">Ajouter</button>
+          </div>
+          <p class="aide">Transmets l'identifiant et le NIP à l'enseignant : il pourra changer son NIP dans « Mon compte ».</p>
+        </div>
+        <div class="table-wrap"><table id="table-ens"></table></div>
+      </div>
+
+      <!-- Mon compte -->
       <div data-panneau="gestion" hidden>
         <div class="section-gestion">
           <div class="carte">
@@ -108,18 +142,11 @@
             <p class="muted">Télécharge les résultats affichés (selon les filtres) en CSV, lisible dans Excel ou Google Sheets.</p>
             <button class="btn btn-secondaire" id="btn-csv">Télécharger le CSV</button>
           </div>
-          <div class="carte zone-danger">
-            <h2>🗑️ Supprimer les données d'un groupe</h2>
-            <p class="muted">Efface définitivement tous les résultats du groupe dans la feuille Google (ex. en fin d'année).</p>
-            <label class="champ"><span>Groupe</span><select id="sup-groupe"></select></label>
-            <label class="champ" style="margin-top:.6rem"><span>Pour confirmer, retape le numéro du groupe</span><input id="sup-confirm" inputmode="numeric"></label>
-            <div class="actions"><button class="btn btn-danger" id="btn-supprimer" disabled>Supprimer</button></div>
-          </div>
           <div class="carte">
-            <h2>🔑 Changer le NIP</h2>
+            <h2>🔑 Changer mon NIP</h2>
             <label class="champ"><span>Nouveau NIP (4 à 8 chiffres)</span><input id="nip-nouveau" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></label>
             <label class="champ" style="margin-top:.6rem"><span>Confirme le nouveau NIP</span><input id="nip-confirm" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></label>
-            <div class="actions"><button class="btn btn-secondaire" id="btn-nip-changer">Changer le NIP</button></div>
+            <div class="actions"><button class="btn btn-secondaire" id="btn-nip-changer">Changer mon NIP</button></div>
           </div>
         </div>
       </div>
@@ -138,7 +165,6 @@
     <div id="detail-contenu"></div>
   </dialog>
 
-  <style>.saut-visuel{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}</style>
   <script src="js/config.js"></script>
   <script src="js/verbes-defaut.js"></script>
   <script src="js/commun.js"></script>

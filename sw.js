@@ -1,6 +1,6 @@
 /* Service worker : permet d'utiliser l'application hors-ligne.
    Change VERSION après chaque mise à jour du site pour forcer le rafraîchissement. */
-const VERSION = 'iv-v1';
+const VERSION = 'iv-v2';
 const FICHIERS = [
   './', './index.html', './enseignant.html', './manifest.webmanifest',
   './css/styles.css', './js/config.js', './js/verbes-defaut.js', './js/commun.js', './js/app.js', './js/enseignant.js',

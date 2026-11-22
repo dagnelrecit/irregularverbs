@@ -103,11 +103,32 @@
   }
 
   $('#form-connexion').addEventListener('input', () => { $('#apercu-code').textContent = lireCode().code || '—'; $('#erreur-connexion').textContent = ''; });
-  $('#form-connexion').addEventListener('submit', (e) => {
+  // Vérifie que le groupe a été créé par un enseignant.
+  // Renvoie false seulement si on est SÛR qu'il n'existe pas (hors-ligne : on laisse passer).
+  async function groupeExiste(g) {
+    if (!VI.urlConfiguree()) return true;
+    try {
+      const rep = await VI.api('getGroups', {}, 8000);
+      const liste = (rep.groupes || []).map(String);
+      VI.store.set('vi:groupes', liste);
+      return liste.length === 0 || liste.includes(g); // aucun groupe créé : ancienne configuration, on accepte
+    } catch (e) { return true; }
+  }
+
+  $('#form-connexion').addEventListener('submit', async (e) => {
     e.preventDefault();
     const { g, i, code } = lireCode();
     if (!/^\d{1,4}$/.test(g)) { $('#erreur-connexion').textContent = 'Entre ton numéro de groupe (des chiffres seulement).'; $('#in-groupe').focus(); return; }
     if (!/^[A-Z]{2,4}\d?$/.test(i)) { $('#erreur-connexion').textContent = 'Entre 2 à 4 initiales (lettres), suivies au besoin d\'un chiffre.'; $('#in-initiales').focus(); return; }
+    const btn = $('#form-connexion button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Vérification…';
+    const ok = await groupeExiste(g);
+    btn.disabled = false; btn.textContent = 'C\'est parti →';
+    if (!ok) {
+      $('#erreur-connexion').textContent = `Le groupe ${g} n'existe pas. Vérifie le numéro avec ton enseignant·e.`;
+      $('#in-groupe').focus(); $('#in-groupe').select();
+      return;
+    }
     connecter(code);
   });
   $('#anciens-codes').addEventListener('click', (e) => {

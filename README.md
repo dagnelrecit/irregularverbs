@@ -30,7 +30,7 @@ apps-script/Code.gs   ← code à coller dans Google Apps Script
 5. Menu **Verbes irréguliers › 1. Préparer la feuille**. Google demande une autorisation la première fois :
    *Continuer › choisis ton compte › Paramètres avancés › Accéder au projet (non sécurisé) › Autoriser*.
    C'est normal : c'est ton propre script.
-6. Menu **Verbes irréguliers › 2. Définir ou changer le NIP**, puis choisis un NIP de 4 à 8 chiffres.
+6. Menu **Verbes irréguliers › 2. Définir ou changer le NIP administrateur**, puis choisis un NIP de 4 à 8 chiffres. Sur le site, tu te connecteras avec l'identifiant **admin** et ce NIP.
 7. Dans Apps Script : **Déployer › Nouveau déploiement**
    - Type (⚙️) : **Application Web**
    - Exécuter en tant que : **Moi**
@@ -80,14 +80,29 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 - **Validation** : majuscules et espaces ignorés, variantes acceptées (`learned/learnt`, `was/were`, `got/gotten`), `to go` accepté, accents non exigés en français, **aucune faute d'orthographe tolérée**.
 - **Hors-ligne** : si le Wi-Fi coupe, l'élève continue. Les résultats s'envoient automatiquement au retour du réseau (indicateur ☁️ / ⏳ en haut à droite).
 
-### Pour l'enseignant (NIP)
+### Rôles : administrateur et enseignants
+| | Administrateur (`admin`) | Enseignant |
+|---|---|---|
+| Résultats visibles | tous les groupes | **ses groupes seulement** |
+| Créer / supprimer des groupes | tous | les siens |
+| Comptes enseignants (ajouter, désactiver, nouveau NIP) | ✅ | ❌ |
+| Réattribuer un groupe, gérer les résultats « orphelins » | ✅ | ❌ |
+| Listes de verbes (communes à tous) | ✅ | ❌ |
+| Export CSV, changer son NIP | ✅ | ✅ |
+
+- L'administrateur crée les comptes dans l'onglet **🧑‍🏫 Enseignants** (nom, identifiant, NIP de départ) et transmet l'identifiant et le NIP.
+- Chaque enseignant crée ses groupes dans **🏫 Mes groupes**. Un numéro de groupe n'appartient qu'à un seul enseignant.
+- Un élève qui entre un groupe qui n'existe pas est bloqué avec un message. Si personne n'a encore créé de groupe, tous les groupes sont acceptés.
+- Le tri des données se fait dans le script Google : un enseignant ne reçoit jamais les résultats des autres groupes.
+- Les NIP sont hachés (jamais en clair). Après 5 essais ratés, l'identifiant est bloqué 5 minutes. La session expire après 6 heures d'inactivité ou à la fermeture de l'onglet.
+
+### Pour l'enseignant (identifiant + NIP)
 - **👥 Élèves** : activités, moyenne, meilleur sprint, temps de pratique et verbes à revoir pour chaque élève. Filtres par groupe, bloc, activité et période.
 - **🔥 Verbes difficiles** : taux d'erreur par verbe, avec une **carte de chaleur par groupe** pour cibler les mini-leçons.
 - **📚 Listes de verbes** : modifie les 4 blocs (une ligne par verbe : `infinitif ; passé ; participe ; français`, variantes séparées par `/`). Tu peux aussi coller des colonnes copiées d'Excel. Les verbes sont enregistrés dans l'onglet « Verbes » de la feuille, où tu peux aussi les modifier directement.
-- **⚙️ Gestion** : export CSV, **suppression des données d'un groupe** (avec confirmation) et changement du NIP.
+- **🏫 Groupes** : création de groupes, effacement des résultats d'un groupe (le groupe est gardé) ou suppression complète d'un groupe, avec confirmation en deux clics.
+- **⚙️ Mon compte** : export CSV et changement de son NIP.
 
-### Sécurité du NIP
-Le NIP n'est **jamais** écrit dans le site. Il est vérifié par le script Google et conservé haché (SHA-256 avec sel) dans les propriétés du script. Après 5 essais ratés, la connexion est bloquée pendant 5 minutes. La session enseignant se ferme quand on ferme l'onglet.
 
 ---
 
@@ -103,7 +118,10 @@ Le NIP n'est **jamais** écrit dans le site. Il est vérifié par le script Goog
 | Problème | Solution |
 |---|---|
 | « 📴 Local » s'affiche | L'URL n'est pas configurée dans `js/config.js`. |
-| « NIP incorrect » ou « Aucun NIP configuré » | Dans la feuille : menu *Verbes irréguliers › Définir ou changer le NIP*. |
+| « Aucun NIP administrateur » | Dans la feuille : menu *Verbes irréguliers › Définir ou changer le NIP administrateur*. |
+| Un enseignant a oublié son NIP | L'administrateur clique sur **Nouveau NIP** dans l'onglet Enseignants. |
+| L'administrateur a oublié son NIP | Dans la feuille : menu *Verbes irréguliers › Définir ou changer le NIP administrateur*. |
+| « Le groupe XXX n'existe pas » | L'enseignant doit d'abord créer ce groupe dans **Mes groupes**. |
 | Les résultats n'arrivent pas | Vérifie que le déploiement est bien « Qui a accès : **Tout le monde** » et que l'URL se termine par `/exec`. |
 | Une modification de `Code.gs` ne s'applique pas | Publie une **nouvelle version** du déploiement (voir l'étape 1). |
 | Pas de son 🔊 | La voix dépend du navigateur. Chrome et Edge ont des voix anglaises par défaut. |

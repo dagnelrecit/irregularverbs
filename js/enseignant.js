@@ -1,31 +1,41 @@
 /* ============================================================
-   Espace enseignant
+   Espace enseignant (administrateur + enseignants)
    ============================================================ */
 'use strict';
 (function () {
   const { $, $$ } = VI;
   const esc = VI.echapper;
-  let nip = null;
-  let lignes = [];             // résultats bruts de la feuille Google
+  let auth = null;             // { token, session: { id, role, nom } }
+  let lignes = [];             // résultats visibles (déjà filtrés par le serveur selon le rôle)
+  let infoGroupes = { groupes: [], orphelins: [], enseignants: [] };
   let tri = { cle: 'code', sens: 1 };
   const NOMS_MODES = { quiz: 'Quiz', entrainement: 'Entraînement', sprint: 'Sprint', difficiles: 'Difficiles' };
+  const estAdmin = () => auth && auth.session.role === 'admin';
 
-  const lireNip = () => { try { return sessionStorage.getItem('vi:nip'); } catch (e) { return null; } };
-  const ecrireNip = (v) => { try { v ? sessionStorage.setItem('vi:nip', v) : sessionStorage.removeItem('vi:nip'); } catch (e) {} };
+  const lireAuth = () => { try { return JSON.parse(sessionStorage.getItem('vi:auth')); } catch (e) { return null; } };
+  const ecrireAuth = (v) => { try { v ? sessionStorage.setItem('vi:auth', JSON.stringify(v)) : sessionStorage.removeItem('vi:auth'); } catch (e) {} };
 
   VI.initApparence($('#btn-theme'), $('#btn-lecture'));
 
-  function montrer(id) { ['#non-configure', '#ecran-nip', '#ecran-tdb'].forEach((s) => { $(s).hidden = s !== id; }); $('#btn-deconnexion').hidden = id !== '#ecran-tdb'; }
+  function montrer(id) {
+    ['#non-configure', '#ecran-nip', '#ecran-tdb'].forEach((s) => { $(s).hidden = s !== id; });
+    const connecte = id === '#ecran-tdb';
+    $('#btn-deconnexion').hidden = !connecte;
+    $('#qui').hidden = !connecte;
+  }
 
   /* ---------------- Connexion ---------------- */
   $('#form-nip').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const val = $('#in-nip').value.trim();
-    if (!/^\d{4,8}$/.test(val)) { $('#erreur-nip').textContent = 'Le NIP contient de 4 à 8 chiffres.'; return; }
+    const id = $('#in-id').value.trim().toLowerCase();
+    const nip = $('#in-nip').value.trim();
+    if (!id) { $('#erreur-nip').textContent = 'Entre ton identifiant.'; $('#in-id').focus(); return; }
+    if (!/^\d{4,8}$/.test(nip)) { $('#erreur-nip').textContent = 'Le NIP contient de 4 à 8 chiffres.'; $('#in-nip').focus(); return; }
     $('#btn-nip').disabled = true; $('#btn-nip').textContent = 'Vérification…'; $('#erreur-nip').textContent = '';
     try {
-      await VI.api('login', { pin: val });
-      nip = val; ecrireNip(val);
+      const rep = await VI.api('login', { identifiant: id, pin: nip });
+      auth = { token: rep.token, session: rep.session };
+      ecrireAuth(auth);
       $('#in-nip').value = '';
       await ouvrirTableau();
     } catch (err) {
@@ -33,20 +43,39 @@
       $('#in-nip').select();
     } finally { $('#btn-nip').disabled = false; $('#btn-nip').textContent = 'Entrer'; }
   });
-  $('#btn-deconnexion').addEventListener('click', () => { nip = null; ecrireNip(null); lignes = []; montrer('#ecran-nip'); $('#in-nip').focus(); });
+
+  function deconnecter(message) {
+    if (auth) VI.api('logout', { token: auth.token }).catch(() => {});
+    auth = null; ecrireAuth(null); lignes = [];
+    montrer('#ecran-nip');
+    $('#erreur-nip').textContent = message || '';
+    $('#in-id').focus();
+  }
+  $('#btn-deconnexion').addEventListener('click', () => deconnecter());
 
   async function appel(action, donnees = {}) {
-    try { return await VI.api(action, Object.assign({ pin: nip }, donnees), 30000); }
+    try { return await VI.api(action, Object.assign({ token: auth && auth.token }, donnees), 30000); }
     catch (err) {
-      if (err.serveur && /NIP/i.test(err.message)) { ecrireNip(null); nip = null; montrer('#ecran-nip'); $('#erreur-nip').textContent = err.message; }
+      if (err.serveur && /Session expirée/i.test(err.message)) { auth = null; ecrireAuth(null); deconnecter(err.message); }
       throw err;
     }
   }
 
   /* ---------------- Chargement ---------------- */
   async function ouvrirTableau() {
+    const admin = estAdmin();
+    $('#qui').textContent = (admin ? '🛡️ ' : '🧑‍🏫 ') + auth.session.nom;
+    $('#titre-tdb').textContent = admin ? 'Tableau de bord · Administration' : 'Tableau de bord';
+    $('#onglet-groupes').textContent = admin ? '🏫 Groupes' : '🏫 Mes groupes';
+    $$('[data-admin]').forEach((el) => { el.hidden = !admin; });
+    // revenir au premier onglet
+    $$('.onglets button').forEach((x, i) => x.setAttribute('aria-selected', String(i === 0)));
+    $$('[data-panneau]').forEach((p) => { p.hidden = p.dataset.panneau !== 'eleves'; });
+    $('#filtres').hidden = false;
     montrer('#ecran-tdb');
-    await Promise.all([chargerResultats(), chargerVerbes()]);
+    const taches = [chargerResultats(), chargerGroupes()];
+    if (admin) taches.push(chargerVerbes(), chargerEnseignants());
+    await Promise.all(taches);
   }
   async function chargerResultats() {
     $('#btn-actualiser').disabled = true; $('#btn-actualiser').textContent = '↻ Chargement…';
@@ -59,18 +88,21 @@
       }));
       remplirGroupes();
       rendre();
-    } catch (err) { VI.toast('Erreur : ' + esc(err.message), 'erreur'); }
+    } catch (err) { if (auth) VI.toast('Erreur : ' + esc(err.message), 'erreur'); }
     finally { $('#btn-actualiser').disabled = false; $('#btn-actualiser').textContent = '↻ Actualiser'; }
   }
-  $('#btn-actualiser').addEventListener('click', chargerResultats);
+  $('#btn-actualiser').addEventListener('click', () => { chargerResultats(); chargerGroupes(); if (estAdmin()) chargerEnseignants(); });
 
-  function groupesConnus() { return [...new Set(lignes.map((l) => l.groupe))].sort((a, b) => Number(a) - Number(b) || a.localeCompare(b)); }
+  function groupesConnus() {
+    const ens = new Set(lignes.map((l) => l.groupe));
+    infoGroupes.groupes.forEach((g) => ens.add(g.groupe));
+    return [...ens].sort((a, b) => Number(a) - Number(b) || a.localeCompare(b));
+  }
   function remplirGroupes() {
     const g = groupesConnus();
     const actuel = $('#f-groupe').value;
-    $('#f-groupe').innerHTML = '<option value="">Tous les groupes</option>' + g.map((x) => `<option ${x === actuel ? 'selected' : ''}>${esc(x)}</option>`).join('');
-    $('#sup-groupe').innerHTML = g.length ? g.map((x) => `<option>${esc(x)}</option>`).join('') : '<option value="">Aucun groupe</option>';
-    majBoutonSupprimer();
+    $('#f-groupe').innerHTML = '<option value="">' + (estAdmin() ? 'Tous les groupes' : 'Tous mes groupes') + '</option>' +
+      g.map((x) => `<option ${x === actuel ? 'selected' : ''}>${esc(x)}</option>`).join('');
   }
 
   /* ---------------- Filtres ---------------- */
@@ -86,7 +118,7 @@
     const b = e.target.closest('[data-onglet]'); if (!b) return;
     $$('.onglets button').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
     $$('[data-panneau]').forEach((p) => { p.hidden = p.dataset.panneau !== b.dataset.onglet; });
-    $('#filtres').hidden = b.dataset.onglet === 'liste'; // les filtres servent aussi à l'export CSV
+    $('#filtres').hidden = ['liste', 'groupes', 'enseignants'].includes(b.dataset.onglet); // ils servent aussi à l'export CSV
   });
 
   /* ---------------- Rendu ---------------- */
@@ -291,7 +323,159 @@
     finally { btn.disabled = false; btn.textContent = '💾 Enregistrer les listes'; }
   });
 
-  /* ---------------- Gestion ---------------- */
+  /* ---------------- Groupes ---------------- */
+  async function chargerGroupes() {
+    try {
+      const rep = await appel('listGroups');
+      infoGroupes = { groupes: rep.groupes || [], orphelins: rep.orphelins || [], enseignants: rep.enseignants || [] };
+      remplirGroupes();
+      rendreGroupes();
+    } catch (err) { if (auth) VI.toast('Erreur : ' + esc(err.message), 'erreur'); }
+  }
+
+  const optionsProprio = (choisi) => [{ identifiant: 'admin', nom: 'Administrateur', actif: true }].concat(infoGroupes.enseignants)
+    .map((e) => `<option value="${esc(e.identifiant)}" ${e.identifiant === choisi ? 'selected' : ''}>${esc(e.nom)}${e.actif ? '' : ' (inactif)'}</option>`).join('');
+
+  function rendreGroupes() {
+    const admin = estAdmin();
+    if (admin) $('#nouveau-proprio').innerHTML = optionsProprio('admin');
+    const gs = infoGroupes.groupes.slice().sort((a, b) => Number(a.groupe) - Number(b.groupe));
+    $('#table-groupes').innerHTML = `<thead><tr><th>Groupe</th>${admin ? '<th>Propriétaire</th>' : ''}<th>Résultats</th><th>Actions</th></tr></thead><tbody>${
+      gs.length ? gs.map((g) => `<tr>
+        <td class="mono">${esc(g.groupe)}</td>
+        ${admin ? `<td><select class="sel-proprio" data-groupe="${esc(g.groupe)}" aria-label="Propriétaire du groupe ${esc(g.groupe)}">${optionsProprio(g.enseignant)}</select></td>` : ''}
+        <td>${g.resultats}</td>
+        <td><div class="actions" style="margin:0">
+          <button class="btn btn-fantome btn-petit" data-confirmer data-action="vider" data-groupe="${esc(g.groupe)}" ${g.resultats ? '' : 'disabled'}>Effacer les résultats</button>
+          <button class="btn btn-fantome btn-petit btn-texte-danger" data-confirmer data-action="supprimer" data-groupe="${esc(g.groupe)}">Supprimer le groupe</button>
+        </div></td></tr>`).join('')
+      : `<tr><td colspan="${admin ? 4 : 3}" class="vide">${admin ? 'Aucun groupe.' : 'Tu n\'as pas encore de groupe : crée-le ci-dessus pour que tes élèves puissent se connecter.'}</td></tr>`}</tbody>`;
+
+    if (admin) {
+      const o = infoGroupes.orphelins;
+      $('#zone-orphelins').innerHTML = o.length ? `<div class="carte zone-danger" style="margin-top:1rem">
+        <h2>⚠️ Résultats sans groupe enregistré</h2>
+        <p class="muted petit">Des résultats ont été reçus pour ces numéros de groupe, qui n'appartiennent à personne (ex. groupe supprimé, ancien envoi hors-ligne). Attribue-les à un enseignant ou efface-les.</p>
+        <div class="table-wrap"><table><thead><tr><th>Groupe</th><th>Résultats</th><th>Attribuer à</th><th></th></tr></thead><tbody>
+        ${o.map((g) => `<tr><td class="mono">${esc(g.groupe)}</td><td>${g.resultats}</td>
+          <td><select id="orph-${esc(g.groupe)}">${optionsProprio('admin')}</select></td>
+          <td><div class="actions" style="margin:0"><button class="btn btn-secondaire btn-petit" data-attribuer="${esc(g.groupe)}">Attribuer</button>
+          <button class="btn btn-fantome btn-petit btn-texte-danger" data-confirmer data-action="vider" data-groupe="${esc(g.groupe)}">Effacer</button></div></td></tr>`).join('')}
+        </tbody></table></div></div>` : '';
+    }
+  }
+
+  $('#btn-creer-groupe').addEventListener('click', async () => {
+    const g = $('#nouveau-groupe').value.trim();
+    if (!/^\d{1,4}$/.test(g)) { VI.toast('Le numéro de groupe contient de 1 à 4 chiffres.', 'erreur'); $('#nouveau-groupe').focus(); return; }
+    const btn = $('#btn-creer-groupe'); btn.disabled = true;
+    try {
+      await appel('createGroup', { groupe: g, proprietaire: estAdmin() ? $('#nouveau-proprio').value : undefined });
+      $('#nouveau-groupe').value = '';
+      VI.toast('✅ Groupe ' + esc(g) + ' créé. Code élève : ' + esc(g) + '-INITIALES', 'succes');
+      await chargerGroupes();
+    } catch (err) { VI.toast(esc(err.message), 'erreur'); }
+    finally { btn.disabled = false; }
+  });
+  $('#nouveau-groupe').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btn-creer-groupe').click(); });
+
+  // Confirmation en deux clics (aucune fenêtre surgissante)
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-confirmer]'); if (!b || b.disabled) return;
+    if (!b.dataset.arme) {
+      b.dataset.arme = '1'; b.dataset.texte = b.textContent;
+      b.textContent = b.dataset.action === 'supprimer' ? 'Confirmer la suppression ?' : 'Confirmer ?';
+      b.classList.add('arme');
+      setTimeout(() => { if (b.isConnected && b.dataset.arme) { delete b.dataset.arme; b.textContent = b.dataset.texte; b.classList.remove('arme'); } }, 4000);
+      return;
+    }
+    delete b.dataset.arme; b.disabled = true; b.textContent = '…';
+    const g = b.dataset.groupe;
+    try {
+      const rep = await appel('deleteGroup', { groupe: g, resultatsSeulement: b.dataset.action === 'vider' });
+      VI.toast(b.dataset.action === 'vider' ? `🗑️ Groupe ${esc(g)} : ${rep.supprimees} résultat(s) effacé(s).` : `🗑️ Groupe ${esc(g)} supprimé (${rep.supprimees} résultat(s)).`, 'succes');
+      await Promise.all([chargerGroupes(), chargerResultats()]);
+    } catch (err) { VI.toast(esc(err.message), 'erreur'); b.disabled = false; b.textContent = b.dataset.texte; b.classList.remove('arme'); }
+  });
+
+  $('#table-groupes').addEventListener('change', async (e) => {
+    const s = e.target.closest('.sel-proprio'); if (!s) return;
+    try { await appel('reassignGroup', { groupe: s.dataset.groupe, proprietaire: s.value }); VI.toast('✅ Groupe ' + esc(s.dataset.groupe) + ' réattribué.', 'succes'); await chargerGroupes(); if (estAdmin()) chargerEnseignants(); }
+    catch (err) { VI.toast(esc(err.message), 'erreur'); chargerGroupes(); }
+  });
+  $('#zone-orphelins').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-attribuer]'); if (!b) return;
+    const g = b.dataset.attribuer;
+    try { await appel('reassignGroup', { groupe: g, proprietaire: $('#orph-' + g).value }); VI.toast('✅ Groupe ' + esc(g) + ' attribué.', 'succes'); await chargerGroupes(); chargerEnseignants(); }
+    catch (err) { VI.toast(esc(err.message), 'erreur'); }
+  });
+
+  /* ---------------- Enseignants (administrateur) ---------------- */
+  let enseignants = [];
+  async function chargerEnseignants() {
+    try { enseignants = (await appel('listTeachers')).enseignants || []; rendreEnseignants(); }
+    catch (err) { if (auth) VI.toast('Erreur : ' + esc(err.message), 'erreur'); }
+  }
+  function rendreEnseignants() {
+    $('#table-ens').innerHTML = `<thead><tr><th>Nom</th><th>Identifiant</th><th>Groupes</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${
+      enseignants.length ? enseignants.map((x) => `<tr>
+        <td>${esc(x.nom)}</td><td class="mono">${esc(x.identifiant)}</td>
+        <td class="mono">${x.groupes.length ? esc(x.groupes.join(', ')) : '<span class="muted">—</span>'}</td>
+        <td><span class="note ${x.actif ? 'haute' : 'basse'}">${x.actif ? 'Actif' : 'Inactif'}</span></td>
+        <td><div class="actions" style="margin:0">
+          <button class="btn btn-fantome btn-petit" data-ens-actif="${esc(x.identifiant)}" data-val="${x.actif ? '0' : '1'}">${x.actif ? 'Désactiver' : 'Réactiver'}</button>
+          <button class="btn btn-fantome btn-petit" data-ens-nip="${esc(x.identifiant)}">Nouveau NIP</button>
+          <button class="btn btn-fantome btn-petit btn-texte-danger" data-ens-suppr="${esc(x.identifiant)}" ${x.groupes.length ? 'disabled title="Réattribue ou supprime d\'abord ses groupes"' : ''}>Supprimer</button>
+        </div>
+        <div class="ligne-nip" id="nip-${esc(x.identifiant)}" hidden>
+          <input inputmode="numeric" maxlength="8" placeholder="Nouveau NIP (4 à 8 chiffres)" aria-label="Nouveau NIP pour ${esc(x.nom)}">
+          <button class="btn btn-secondaire btn-petit" data-ens-nip-ok="${esc(x.identifiant)}">Enregistrer</button>
+        </div></td></tr>`).join('')
+      : '<tr><td colspan="5" class="vide">Aucun enseignant pour l\'instant. Ajoute le premier ci-dessus.</td></tr>'}</tbody>`;
+  }
+  $('#btn-ajouter-ens').addEventListener('click', async () => {
+    const nom = $('#ens-nom').value.trim(), id = $('#ens-id').value.trim().toLowerCase(), nip = $('#ens-nip').value.trim();
+    if (!nom) { VI.toast('Entre le nom.', 'erreur'); return; }
+    if (!/^[a-z0-9._-]{2,20}$/.test(id)) { VI.toast('Identifiant : 2 à 20 caractères (minuscules, chiffres, point, tiret).', 'erreur'); return; }
+    if (!/^\d{4,8}$/.test(nip)) { VI.toast('Le NIP doit contenir de 4 à 8 chiffres.', 'erreur'); return; }
+    const btn = $('#btn-ajouter-ens'); btn.disabled = true;
+    try {
+      await appel('saveTeacher', { nouveau: true, identifiant: id, nom, pin: nip });
+      ['#ens-nom', '#ens-id', '#ens-nip'].forEach((s) => { $(s).value = ''; });
+      delete $('#ens-id').dataset.touche;
+      VI.toast(`✅ ${esc(nom)} ajouté·e. Identifiant : <b>${esc(id)}</b>`, 'succes');
+      await Promise.all([chargerEnseignants(), chargerGroupes()]);
+    } catch (err) { VI.toast(esc(err.message), 'erreur'); }
+    finally { btn.disabled = false; }
+  });
+  $('#ens-nom').addEventListener('input', () => { // suggère un identifiant : initiale + nom de famille
+    if ($('#ens-id').dataset.touche) return;
+    const p = VI.norm($('#ens-nom').value).replace(/[^a-z\s-]/g, '').split(/\s+/).filter(Boolean);
+    $('#ens-id').value = p.length > 1 ? (p[0][0] + p[p.length - 1]).slice(0, 20) : (p[0] || '');
+  });
+  $('#ens-id').addEventListener('input', () => { $('#ens-id').dataset.touche = '1'; });
+  $('#table-ens').addEventListener('click', async (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    try {
+      if (b.dataset.ensActif) {
+        await appel('saveTeacher', { identifiant: b.dataset.ensActif, actif: b.dataset.val === '1' });
+        VI.toast('✅ Statut modifié.', 'succes'); await chargerEnseignants(); chargerGroupes();
+      } else if (b.dataset.ensNip) {
+        const z = $('#nip-' + b.dataset.ensNip); z.hidden = !z.hidden; if (!z.hidden) z.querySelector('input').focus();
+      } else if (b.dataset.ensNipOk) {
+        const v = $('#nip-' + b.dataset.ensNipOk + ' input').value.trim();
+        if (!/^\d{4,8}$/.test(v)) { VI.toast('Le NIP doit contenir de 4 à 8 chiffres.', 'erreur'); return; }
+        await appel('saveTeacher', { identifiant: b.dataset.ensNipOk, pin: v });
+        VI.toast('🔑 Nouveau NIP enregistré. Transmets-le à l\'enseignant.', 'succes'); rendreEnseignants();
+      } else if (b.dataset.ensSuppr) {
+        if (!b.dataset.arme) { b.dataset.arme = '1'; b.textContent = 'Confirmer ?'; b.classList.add('arme'); setTimeout(() => { if (b.isConnected) { delete b.dataset.arme; b.textContent = 'Supprimer'; b.classList.remove('arme'); } }, 4000); return; }
+        await appel('deleteTeacher', { identifiant: b.dataset.ensSuppr });
+        VI.toast('🗑️ Compte supprimé.', 'succes'); await chargerEnseignants(); chargerGroupes();
+      }
+    } catch (err) { VI.toast(esc(err.message), 'erreur'); }
+  });
+
+  /* ---------------- Mon compte ---------------- */
   $('#btn-csv').addEventListener('click', () => {
     const f = filtrer();
     if (!f.length) { VI.toast('Rien à exporter pour ces filtres.'); return; }
@@ -304,28 +488,12 @@
     document.body.appendChild(a); a.click(); a.remove();
   });
 
-  function majBoutonSupprimer() { const g = $('#sup-groupe').value; $('#btn-supprimer').disabled = !g || $('#sup-confirm').value.trim() !== g; }
-  $('#sup-groupe').addEventListener('change', majBoutonSupprimer);
-  $('#sup-confirm').addEventListener('input', majBoutonSupprimer);
-  $('#btn-supprimer').addEventListener('click', async () => {
-    const g = $('#sup-groupe').value;
-    const btn = $('#btn-supprimer'); btn.disabled = true; btn.textContent = 'Suppression…';
-    try {
-      const rep = await appel('deleteGroup', { groupe: g });
-      VI.toast(`🗑️ Groupe ${esc(g)} : ${rep.supprimees} résultat(s) supprimé(s).`, 'succes');
-      $('#sup-confirm').value = '';
-      await chargerResultats();
-    } catch (e) { VI.toast('Erreur : ' + esc(e.message), 'erreur'); }
-    finally { btn.textContent = 'Supprimer'; majBoutonSupprimer(); }
-  });
-
   $('#btn-nip-changer').addEventListener('click', async () => {
     const n = $('#nip-nouveau').value.trim(), c = $('#nip-confirm').value.trim();
     if (!/^\d{4,8}$/.test(n)) { VI.toast('Le NIP doit contenir de 4 à 8 chiffres.', 'erreur'); return; }
     if (n !== c) { VI.toast('Les deux NIP ne sont pas identiques.', 'erreur'); return; }
     try {
       await appel('changePin', { nouveau: n });
-      nip = n; ecrireNip(n);
       $('#nip-nouveau').value = ''; $('#nip-confirm').value = '';
       VI.toast('🔑 NIP changé.', 'succes');
     } catch (e) { VI.toast('Erreur : ' + esc(e.message), 'erreur'); }
@@ -333,6 +501,6 @@
 
   /* ---------------- Démarrage ---------------- */
   if (!VI.urlConfiguree()) { montrer('#non-configure'); return; }
-  nip = lireNip();
-  if (nip) ouvrirTableau().catch(() => {}); else { montrer('#ecran-nip'); $('#in-nip').focus(); }
+  auth = lireAuth();
+  if (auth && auth.token) ouvrirTableau().catch(() => {}); else { montrer('#ecran-nip'); $('#in-id').focus(); }
 })();
