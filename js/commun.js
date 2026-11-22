@@ -125,6 +125,64 @@ VI.rafraichirVerbes = async function () {
 };
 VI.cle = (v) => v.bloc + '|' + VI.norm(VI.premiere(v.base));
 
+/* ---------- Phrases à compléter : liste (feuille Google ou défaut) ---------- */
+VI.nettoyerPhrases = (liste) => (Array.isArray(liste) ? liste : [])
+  .map((p) => ({ v: String(p.v || '').trim(), s: String(p.s || '').trim(), r: String(p.r || '').trim(), f: String(p.f || '').trim().toUpperCase(), c: String(p.c || '').trim() }))
+  .filter((p) => p.v && p.r && (p.s.match(/___/g) || []).length === 1 && ['P', 'PP', 'B', 'S'].includes(p.f));
+VI.phrasesLocales = function () {
+  const cache = VI.nettoyerPhrases(VI.store.get('vi:phrases', null));
+  return cache.length ? cache : (typeof PHRASES_DEFAUT !== 'undefined' ? VI.nettoyerPhrases(PHRASES_DEFAUT) : []);
+};
+VI.rafraichirPhrases = async function () {
+  if (!VI.urlConfiguree()) return false;
+  try {
+    const rep = await VI.api('getPhrases', {}, 10000);
+    const liste = VI.nettoyerPhrases(rep.phrases);
+    const avant = JSON.stringify(VI.store.get('vi:phrases', null));
+    if (liste.length) VI.store.set('vi:phrases', liste); else VI.store.del('vi:phrases');
+    return JSON.stringify(VI.store.get('vi:phrases', null)) !== avant;
+  } catch (e) { return false; }
+};
+
+VI.LIBELLE_FORME = { P: 'Passé simple', PP: 'Participe passé', B: 'Infinitif (base form)', S: 'Présent (he/she/it)' };
+// Explique pourquoi on utilise ce temps, à partir de l'indice de la phrase
+VI.explication = function (forme, indice) {
+  const i = indice ? '« ' + indice + ' » : ' : '';
+  return {
+    P: i + 'moment précis et terminé dans le passé → passé simple (simple past).',
+    PP: i + 'après have/has/had (present perfect) ou après be (voix passive), on utilise le participe passé.',
+    B: i + 'après do/does/did, will, can, could, should, to, let\'s, don\'t… ou dans une consigne, le verbe reste à l\'infinitif (base form).',
+    S: i + 'habitude, fait ou vérité générale → présent. Avec he, she, it (une seule personne ou chose), on ajoute -s ou -es.'
+  }[forme] || '';
+};
+
+/* ---------- Fausses formes (Vrai ou faux, Chasse aux erreurs) ---------- */
+// Forme « régularisée » fautive : buyed, taked, goed, teached…
+VI.formeReguliere = function (base) {
+  const b = VI.norm(VI.premiere(base));
+  if (b === 'be') return 'beed';
+  if (/e$/.test(b)) return b + 'd';
+  if (/[^aeiou]y$/.test(b)) return b.slice(0, -1) + 'ied';
+  return b + 'ed';
+};
+function choisirFausse(candidats, acceptees) {
+  const ok = new Set(VI.variantes(acceptees).map(VI.norm));
+  const vus = new Set();
+  const liste = candidats.map((x) => VI.norm(x)).filter((x) => x && !ok.has(x) && !vus.has(x) && vus.add(x));
+  return liste.length ? liste[Math.floor(Math.random() * liste.length)] : null;
+}
+// Pour un trio : fausse forme dans la colonne passe ou participe
+VI.fausseForme = function (v, col) {
+  const autres = col === 'passe' ? [VI.premiere(v.participe)] : [VI.premiere(v.passe), VI.premiere(v.base)];
+  return choisirFausse([VI.formeReguliere(v.base)].concat(autres), v[col]);
+};
+// Pour une phrase : erreur typique selon le temps attendu
+VI.fausseFormePhrase = function (p, v) {
+  const base = VI.premiere(v.base), passe = VI.premiere(v.passe), pp = VI.premiere(v.participe), reg = VI.formeReguliere(v.base);
+  const cand = { P: [reg, pp], PP: [passe, reg], B: [passe], S: [base, passe] }[p.f] || [reg];
+  return choisirFausse(cand, p.r);
+};
+
 /* ---------- Thème clair/sombre et lecture facilitée ---------- */
 VI.initApparence = function (btnTheme, btnLecture) {
   const html = document.documentElement;

@@ -64,8 +64,10 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 ## 👩‍🏫 Utilisation en classe
 
 ### Pour les élèves
-- **Code élève** : numéro de groupe + initiales, par exemple `21-DC`. Si deux élèves d'un groupe ont les mêmes initiales, l'un ou l'une ajoute un chiffre (`21-DC2`). Aucun nom complet n'est enregistré, ce qui respecte la Loi 25.
-- Sur un **Chromebook partagé**, chaque code a sa propre progression. Les codes déjà utilisés apparaissent sous forme de raccourcis (le ✕ les retire de l'appareil).
+- **Connexion** : l'élève choisit son **école** dans une liste, puis entre son numéro de groupe et ses initiales (ex. École Saint-Jean · `21-DC`). Si deux élèves d'un groupe ont les mêmes initiales, l'un ou l'une ajoute un chiffre (`21-DC2`). Aucun nom complet n'est enregistré (Loi 25).
+- **NIP personnel** : à la première connexion, l'élève choisit un NIP de 4 chiffres. Ce NIP est ensuite demandé à chaque connexion, ce qui empêche un autre élève d'utiliser son code. En cas d'oubli, l'enseignant le réinitialise dans la fiche de l'élève, et la progression est conservée.
+- **Progression sur tous les appareils** : la progression (verbes maîtrisés, XP, badges, records) est sauvegardée dans la feuille Google. L'élève la retrouve sur n'importe quel Chromebook, ordinateur ou cellulaire.
+- Sur un **Chromebook partagé**, les codes déjà utilisés apparaissent comme raccourcis, mais le NIP est toujours demandé. La session se ferme à la fermeture du navigateur.
 - On choisit un **bloc** (1 à 4), puis une **activité** :
 
 | Activité | Description |
@@ -73,8 +75,11 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 | 📖 Étudier | Verbes regroupés par **familles** (cut-cut-cut, sing-sang-sung…). On cache une colonne pour s'autotester. |
 | 🎯 Entraînement | 15 questions choisies par **répétition espacée** : les verbes ratés reviennent plus souvent. Indices permis. |
 | 📝 Quiz | 20 questions notées. Un indice divise les points de la question par deux. |
-| ⚡ Sprint 60 s | Le plus de verbes possible en une minute, sans indice. Un record est conservé par bloc. |
 | 🧠 Mes verbes difficiles | Seulement les verbes ratés la dernière fois. |
+| ✍️ Phrases à compléter | Une phrase avec le verbe entre parenthèses à mettre au bon temps : passé simple, participe passé, infinitif (après *did*, *will*, *can*…) ou présent (*he goes*). La correction met en évidence l'indice de temps (*yesterday*, *have you ever*…) et explique la règle. |
+| 🕵️ Chasse aux erreurs | 5 phrases par manche, dont 2 ou 3 contiennent un verbe mal conjugué (*buyed*, *have went*, *did saw*, *she go*…). L'élève clique sur les erreurs et les corrige. 4 manches. |
+| ⚡ Sprint 60 s | Le plus de verbes possible en une minute, sans indice. Un record est conservé par bloc. |
+| ✅ Vrai ou faux éclair | *go → went → goed* ? Vrai ou faux, le plus vite possible en 60 s (flèches du clavier ou glissement sur cellulaire). |
 
 - **Format des questions** : une des 4 formes est donnée (infinitif, passé, participe ou français) et l'élève complète les 3 autres. Le menu « Options » permet de fixer la forme donnée (par défaut : au hasard).
 - **Validation** : majuscules et espaces ignorés, variantes acceptées (`learned/learnt`, `was/were`, `got/gotten`), `to go` accepté, accents non exigés en français, **aucune faute d'orthographe tolérée**.
@@ -87,11 +92,14 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 | Créer / supprimer des groupes | tous | les siens |
 | Comptes enseignants (ajouter, désactiver, nouveau NIP) | ✅ | ❌ |
 | Réattribuer un groupe, gérer les résultats « orphelins » | ✅ | ❌ |
+| Gérer les écoles (ajouter, renommer, désactiver) | ✅ | ❌ |
+| Réinitialiser le NIP d'un élève | tous | ses élèves |
 | Listes de verbes (communes à tous) | ✅ | ❌ |
 | Export CSV, changer son NIP | ✅ | ✅ |
 
 - L'administrateur crée les comptes dans l'onglet **🧑‍🏫 Enseignants** (nom, identifiant, NIP de départ) et transmet l'identifiant et le NIP.
-- Chaque enseignant crée ses groupes dans **🏫 Mes groupes**. Un numéro de groupe n'appartient qu'à un seul enseignant.
+- L'administrateur crée les **écoles** dans l'onglet **🏛️ Écoles** : un nom visible par les élèves et un code court (ex. `SJ`) qui ne change plus.
+- Chaque enseignant crée ses groupes dans **🏫 Mes groupes** en choisissant l'école. Dans une même école, un numéro n'appartient qu'à un seul enseignant, mais deux écoles peuvent chacune avoir un groupe 21.
 - Un élève qui entre un groupe qui n'existe pas est bloqué avec un message. Si personne n'a encore créé de groupe, tous les groupes sont acceptés.
 - Le tri des données se fait dans le script Google : un enseignant ne reçoit jamais les résultats des autres groupes.
 - Les NIP sont hachés (jamais en clair). Après 5 essais ratés, l'identifiant est bloqué 5 minutes. La session expire après 6 heures d'inactivité ou à la fermeture de l'onglet.
@@ -99,7 +107,8 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 ### Pour l'enseignant (identifiant + NIP)
 - **👥 Élèves** : activités, moyenne, meilleur sprint, temps de pratique et verbes à revoir pour chaque élève. Filtres par groupe, bloc, activité et période.
 - **🔥 Verbes difficiles** : taux d'erreur par verbe, avec une **carte de chaleur par groupe** pour cibler les mini-leçons.
-- **📚 Listes de verbes** : modifie les 4 blocs (une ligne par verbe : `infinitif ; passé ; participe ; français`, variantes séparées par `/`). Tu peux aussi coller des colonnes copiées d'Excel. Les verbes sont enregistrés dans l'onglet « Verbes » de la feuille, où tu peux aussi les modifier directement.
+- **Fiche élève** (clic sur un élève) : état du compte (NIP défini ou non), maîtrise par bloc, bouton **Réinitialiser le NIP**, graphique de progression et toutes les tentatives.
+- **📚 Verbes et phrases** (administrateur) : modifie les 4 blocs (une ligne par verbe : `infinitif ; passé ; participe ; français`, variantes séparées par `/`). Tu peux aussi coller des colonnes copiées d'Excel. Les verbes sont enregistrés dans l'onglet « Verbes » de la feuille, où tu peux aussi les modifier directement. Le bouton **Copier les phrases par défaut dans la feuille** place les 300 phrases dans l'onglet « Phrases » pour les relire et les modifier. Colonnes : verbe · phrase avec `___` · réponse · forme (`P` passé simple, `PP` participe passé, `B` infinitif, `S` présent he/she/it) · indice (mot de la phrase qui révèle le temps).
 - **🏫 Groupes** : création de groupes, effacement des résultats d'un groupe (le groupe est gardé) ou suppression complète d'un groupe, avec confirmation en deux clics.
 - **⚙️ Mon compte** : export CSV et changement de son NIP.
 
@@ -121,7 +130,10 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 | « Aucun NIP administrateur » | Dans la feuille : menu *Verbes irréguliers › Définir ou changer le NIP administrateur*. |
 | Un enseignant a oublié son NIP | L'administrateur clique sur **Nouveau NIP** dans l'onglet Enseignants. |
 | L'administrateur a oublié son NIP | Dans la feuille : menu *Verbes irréguliers › Définir ou changer le NIP administrateur*. |
-| « Le groupe XXX n'existe pas » | L'enseignant doit d'abord créer ce groupe dans **Mes groupes**. |
+| « Ce groupe n'existe pas dans cette école » | L'enseignant doit d'abord créer ce groupe dans **Mes groupes**, dans la bonne école. |
+| Un élève a oublié son NIP | Dans la fiche de l'élève : **Réinitialiser le NIP**. L'élève en choisit un nouveau, et sa progression est conservée. |
+| « Ce code a déjà un NIP » à la première connexion | Un autre élève du groupe a les mêmes initiales : ajouter un chiffre (ex. AB2). |
+| « Reconnecte-toi pour envoyer tes résultats » | La session de l'élève a expiré (après 180 jours ou une réinitialisation du NIP) : il se reconnecte avec son NIP, et les résultats en attente partent automatiquement. |
 | Les résultats n'arrivent pas | Vérifie que le déploiement est bien « Qui a accès : **Tout le monde** » et que l'URL se termine par `/exec`. |
 | Une modification de `Code.gs` ne s'applique pas | Publie une **nouvelle version** du déploiement (voir l'étape 1). |
 | Pas de son 🔊 | La voix dépend du navigateur. Chrome et Edge ont des voix anglaises par défaut. |

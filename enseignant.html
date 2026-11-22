@@ -58,17 +58,19 @@
         <button role="tab" aria-selected="true" data-onglet="eleves">👥 Élèves</button>
         <button role="tab" aria-selected="false" data-onglet="verbes-diff">🔥 Verbes difficiles</button>
         <button role="tab" aria-selected="false" data-onglet="groupes" id="onglet-groupes">🏫 Mes groupes</button>
-        <button role="tab" aria-selected="false" data-onglet="liste" data-admin>📚 Listes de verbes</button>
+        <button role="tab" aria-selected="false" data-onglet="ecoles" data-admin>🏛️ Écoles</button>
+        <button role="tab" aria-selected="false" data-onglet="liste" data-admin>📚 Verbes et phrases</button>
         <button role="tab" aria-selected="false" data-onglet="enseignants" data-admin>🧑‍🏫 Enseignants</button>
         <button role="tab" aria-selected="false" data-onglet="gestion">⚙️ Mon compte</button>
       </nav>
 
       <div class="filtres" id="filtres">
+        <label class="champ"><span>École</span><select id="f-ecole"></select></label>
         <label class="champ"><span>Groupe</span><select id="f-groupe"></select></label>
         <label class="champ"><span>Bloc</span>
           <select id="f-bloc"><option value="">Tous les blocs</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
         <label class="champ"><span>Activité</span>
-          <select id="f-mode"><option value="">Toutes</option><option value="quiz">Quiz</option><option value="entrainement">Entraînement</option><option value="sprint">Sprint</option><option value="difficiles">Verbes difficiles</option></select></label>
+          <select id="f-mode"><option value="">Toutes</option><option value="quiz">Quiz</option><option value="entrainement">Entraînement</option><option value="sprint">Sprint</option><option value="difficiles">Verbes difficiles</option><option value="phrases">Phrases à compléter</option><option value="erreurs">Chasse aux erreurs</option><option value="vraifaux">Vrai ou faux</option></select></label>
         <label class="champ"><span>Période</span>
           <select id="f-periode"><option value="7">7 derniers jours</option><option value="30" selected>30 derniers jours</option><option value="0">Depuis le début</option></select></label>
       </div>
@@ -93,16 +95,31 @@
       <div data-panneau="groupes" hidden>
         <div class="carte" style="margin-bottom:1rem">
           <h2>➕ Créer un groupe</h2>
-          <p class="muted petit">Les élèves entreront ce numéro à la connexion (ex. groupe 201 → code <b>201-AB</b>). Un numéro ne peut appartenir qu'à un seul enseignant.</p>
+          <p class="muted petit">Les élèves choisiront l'école puis entreront ce numéro à la connexion. Dans une même école, un numéro n'appartient qu'à un seul enseignant (deux écoles peuvent chacune avoir un groupe 21).</p>
           <div class="filtres" style="margin:0">
-            <label class="champ"><span>Numéro du groupe</span><input id="nouveau-groupe" inputmode="numeric" maxlength="4" placeholder="201"></label>
+            <label class="champ"><span>École</span><select id="nouveau-ecole"></select></label>
+            <label class="champ"><span>Numéro du groupe</span><input id="nouveau-groupe" inputmode="numeric" maxlength="4" placeholder="21"></label>
             <label class="champ" data-admin><span>Propriétaire</span><select id="nouveau-proprio"></select></label>
             <button class="btn btn-principal" id="btn-creer-groupe" style="flex:0 0 auto">Créer le groupe</button>
           </div>
         </div>
         <div class="table-wrap"><table id="table-groupes"></table></div>
-        <p class="aide">« Effacer les résultats » garde le groupe (ex. nouvelle étape). « Supprimer le groupe » efface le groupe et tous ses résultats. Chaque action demande une confirmation.</p>
+        <p class="aide">« Effacer les résultats » garde le groupe et les comptes des élèves (NIP et progression). « Supprimer le groupe » efface le groupe, ses résultats et les comptes de ses élèves. Chaque action demande une confirmation.</p>
         <div id="zone-orphelins" data-admin></div>
+      </div>
+
+      <!-- Écoles (admin) -->
+      <div data-panneau="ecoles" hidden>
+        <div class="carte" style="margin-bottom:1rem">
+          <h2>➕ Ajouter une école</h2>
+          <div class="filtres" style="margin:0">
+            <label class="champ" style="flex:2"><span>Nom de l'école</span><input id="ecole-nom" placeholder="École secondaire Saint-Jean" maxlength="80"></label>
+            <label class="champ"><span>Code court (2 à 6 lettres)</span><input id="ecole-id" placeholder="ESJ" maxlength="6" autocapitalize="characters" spellcheck="false"></label>
+            <button class="btn btn-principal" id="btn-ajouter-ecole" style="flex:0 0 auto">Ajouter</button>
+          </div>
+          <p class="aide">Le code court ne se modifie plus ensuite (il fait partie des codes élèves, ex. ESJ-21-AB), mais le nom, oui. Les élèves voient seulement le nom.</p>
+        </div>
+        <div class="table-wrap"><table id="table-ecoles"></table></div>
       </div>
 
       <!-- Listes (admin) -->
@@ -116,6 +133,13 @@
         <div class="actions">
           <button class="btn btn-fantome" id="btn-verbes-defaut">Recharger la liste par défaut</button>
           <button class="btn btn-principal" id="btn-verbes-sauver">💾 Enregistrer les listes</button>
+        </div>
+
+        <div class="carte" style="margin-top:1.5rem">
+          <h2>✍️ Phrases (« Phrases à compléter » et « Chasse aux erreurs »)</h2>
+          <p class="muted" id="etat-phrases">…</p>
+          <p class="muted petit">Les phrases se modifient directement dans l'onglet <b>Phrases</b> de la feuille Google, une ligne par phrase : <code>verbe</code> · <code>phrase avec ___</code> · <code>réponse</code> · <code>forme</code> (P = passé simple, PP = participe passé, B = infinitif, S = présent avec he/she/it) · <code>indice</code> (mot de la phrase qui révèle le temps). Seules les phrases des verbes présents dans un bloc sont utilisées pour ce bloc.</p>
+          <div class="actions"><button class="btn btn-secondaire" id="btn-phrases-defaut" data-confirmer-simple>Copier les phrases par défaut dans la feuille</button></div>
         </div>
       </div>
 
@@ -167,6 +191,7 @@
 
   <script src="js/config.js"></script>
   <script src="js/verbes-defaut.js"></script>
+  <script src="js/phrases-defaut.js"></script>
   <script src="js/commun.js"></script>
   <script src="js/enseignant.js"></script>
 </body>

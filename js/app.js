@@ -6,20 +6,27 @@
   const { $, $$ } = VI;
   const esc = VI.echapper;
 
+  // Valeurs par défaut pour les réglages ajoutés après la version 1 (config.js n'a pas à être modifié)
+  const C = Object.assign({ questionsPhrases: 15, manchesChasse: 4, dureeVraiFaux: 60 }, typeof CONFIG === 'object' ? CONFIG : {});
   let VERBES = VI.verbesLocaux();
-  let eleve = null;      // { code, groupe }
+  let PHRASES = VI.phrasesLocales();
+  let eleve = null;      // { code, groupe, ecole, nomEcole }
   let profil = null;     // progression locale de l'élève
   let session = null;    // activité en cours
   let q = null;          // question en cours
   const choix = { bloc: VI.store.get('vi:bloc', 1), forme: VI.store.get('vi:forme', 'hasard') };
 
   const MODES = {
-    etude:        { titre: 'Étudier',              icone: '📖', desc: 'Découvre les verbes par familles et teste ta mémoire.' },
-    entrainement: { titre: 'Entraînement',         icone: '🎯', desc: '15 questions qui ciblent tes erreurs. Indices permis.' },
-    quiz:         { titre: 'Quiz',                 icone: '📝', desc: '20 questions notées. Un indice coûte la moitié des points.' },
-    sprint:       { titre: 'Sprint 60 s',          icone: '⚡', desc: 'Le plus de verbes possible en une minute. Sans indice.' },
-    difficiles:   { titre: 'Mes verbes difficiles', icone: '🧠', desc: 'Seulement les verbes qui te donnent du fil à retordre.' }
+    etude:        { groupe: 'apprendre', titre: 'Étudier',               icone: '📖', desc: 'Découvre les verbes par familles et teste ta mémoire.' },
+    entrainement: { groupe: 'apprendre', titre: 'Entraînement',          icone: '🎯', desc: '15 questions qui ciblent tes erreurs. Indices permis.' },
+    difficiles:   { groupe: 'apprendre', titre: 'Mes verbes difficiles', icone: '🧠', desc: 'Seulement les verbes qui te donnent du fil à retordre.' },
+    phrases:      { groupe: 'contexte',  titre: 'Phrases à compléter',   icone: '✍️', desc: 'Mets le verbe au bon temps grâce aux indices de la phrase.' },
+    erreurs:      { groupe: 'contexte',  titre: 'Chasse aux erreurs',    icone: '🕵️', desc: 'Repère les verbes mal conjugués et corrige-les.' },
+    quiz:         { groupe: 'defis',     titre: 'Quiz',                  icone: '📝', desc: '20 questions notées. Un indice coûte la moitié des points.' },
+    sprint:       { groupe: 'defis',     titre: 'Sprint 60 s',           icone: '⚡', desc: 'Le plus de verbes possible en une minute. Sans indice.' },
+    vraifaux:     { groupe: 'defis',     titre: 'Vrai ou faux éclair',   icone: '✅', desc: 'go → went → goed ? Réponds le plus vite possible en 60 s.' }
   };
+  const GROUPES_MODES = { apprendre: '🌱 Apprendre', contexte: '💬 En contexte', defis: '🏆 Défis' };
 
   const BADGES = [
     { id: 'premier',   icone: '👣', nom: 'Premier pas', desc: 'Terminer une première activité' },
@@ -27,6 +34,9 @@
     { id: 'eclair',    icone: '⚡', nom: 'Éclair',      desc: 'Au moins 15 verbes réussis en sprint' },
     { id: 'parfait',   icone: '💎', nom: 'Sans faute',  desc: 'Un quiz à 100 % sans indice' },
     { id: 'constance', icone: '📅', nom: 'Constance',   desc: 'Pratiquer 3 jours de suite' },
+    { id: 'contexte',  icone: '✍️', nom: 'Bon temps',   desc: 'Phrases à compléter : 100 % sans indice' },
+    { id: 'detective', icone: '🕵️', nom: 'Détective',   desc: 'Chasse aux erreurs : 100 %' },
+    { id: 'lynx',      icone: '👁️', nom: 'Œil de lynx', desc: 'Vrai ou faux : 20 bonnes réponses ou plus' },
     { id: 'maitre1',   icone: '🥇', nom: 'Maître · bloc 1', desc: 'Maîtriser tous les verbes du bloc 1' },
     { id: 'maitre2',   icone: '🥇', nom: 'Maître · bloc 2', desc: 'Maîtriser tous les verbes du bloc 2' },
     { id: 'maitre3',   icone: '🥇', nom: 'Maître · bloc 3', desc: 'Maîtriser tous les verbes du bloc 3' },
@@ -37,11 +47,7 @@
   const PRESQUE = ['Presque ! Observe les corrections.', 'Pas encore… et c\'est comme ça qu\'on apprend.', 'Ton cerveau vient de noter cette erreur : tu le reverras bientôt.', 'Regarde bien la famille de ce verbe, ça aide !'];
 
   /* ---------------- Profil local (par élève, utile sur un Chromebook partagé) ---------------- */
-  const chargerProfil = (code) => Object.assign(
-    { xp: 0, boites: {}, badges: [], jours: [], sprint: {}, historique: [] },
-    VI.store.get('vi:eleve:' + code, {})
-  );
-  const sauverProfil = () => VI.store.set('vi:eleve:' + eleve.code, profil);
+  const sauverProfil = () => { VI.store.set('vi:eleve:' + eleve.code, profil); if (!LOCAL) VI.store.set('vi:sale:' + eleve.code, true); };
   const boite = (v) => (profil.boites[VI.cle(v)] || { b: 0, vu: 0 }).b;
   const niveau = () => Math.floor(Math.sqrt(profil.xp / 40)) + 1;
   const verbesDuBloc = (b) => VERBES.filter((v) => v.bloc === b);
@@ -89,82 +95,191 @@
     $('#val-serie').textContent = serieJours();
     $('#val-niveau').textContent = niveau();
     $('#pastille-niveau').title = profil.xp + ' XP — prochain niveau à ' + (niveau() ** 2 * 40) + ' XP';
-    $('#pastille-code').textContent = eleve.code;
+    $('#pastille-code').textContent = eleve.code.replace(/^LOCAL-/, '');
+    $('#pastille-code').title = eleve.nomEcole && eleve.ecole !== 'LOCAL' ? eleve.nomEcole : 'Ton code';
   }
 
-  /* ---------------- Connexion ---------------- */
+  /* ---------------- Connexion (école + groupe + initiales + NIP) ---------------- */
+  const LOCAL = !VI.urlConfiguree();          // mode local : pas de feuille Google, donc pas d'école ni de NIP
+  const RX_CODE = /^([A-Z0-9]{2,6})-(\d{1,4})-([A-Z]{2,4}\d?)$/;
+  let ECOLES = VI.store.get('vi:ecoles', []);
+  let etapeNip = null;                         // { code, mode: 'login' | 'register' | 'offline' }
+
+  const nomEcole = (id) => (ECOLES.find((e) => e.id === id) || {}).nom || id;
+  const jeton = (code) => VI.store.get('vi:jeton:' + code, null);
+  const ecrireSessionOnglet = (code) => { try { code ? sessionStorage.setItem('vi:session', code) : sessionStorage.removeItem('vi:session'); } catch (e) {} };
+  const lireSessionOnglet = () => { try { return sessionStorage.getItem('vi:session'); } catch (e) { return null; } };
+  async function empreinte(texte) { // pour la connexion hors-ligne
+    try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texte)); return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join(''); }
+    catch (e) { return null; }
+  }
+
+  function remplirEcoles() {
+    const sel = $('#in-ecole');
+    const actuel = sel.value || VI.store.get('vi:ecole', '');
+    sel.innerHTML = '<option value="">— Choisis ton école —</option>' + ECOLES.map((e) => `<option value="${esc(e.id)}" ${e.id === actuel ? 'selected' : ''}>${esc(e.nom)}</option>`).join('');
+  }
+  async function chargerEcoles() {
+    if (LOCAL) return;
+    try {
+      const rep = await VI.api('getSchools', {}, 8000);
+      ECOLES = rep.ecoles || [];
+      VI.store.set('vi:ecoles', ECOLES);
+      remplirEcoles();
+    } catch (e) { /* hors-ligne : on garde la liste en cache */ }
+  }
+
   function lireCode() {
+    const ec = LOCAL ? 'LOCAL' : $('#in-ecole').value;
     const g = $('#in-groupe').value.replace(/\D/g, '');
     const i = $('#in-initiales').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    return { g, i, code: g && i ? g + '-' + i : '' };
+    return { ec, g, i, code: ec && g && i ? ec + '-' + g + '-' + i : '' };
   }
+  const codeAffiche = (code) => { const m = RX_CODE.exec(code); return m ? (m[1] === 'LOCAL' ? '' : nomEcole(m[1]) + ' · ') + m[2] + '-' + m[3] : code; };
+
   function afficherConnexion() {
-    eleve = null; profil = null; majEntete();
-    const codes = VI.store.get('vi:codes', []);
+    eleve = null; profil = null; etapeNip = null; ecrireSessionOnglet(null); majEntete();
+    $('#champ-ecole').hidden = LOCAL;
+    remplirEcoles();
+    montrerEtape('code');
+    const codes = VI.store.get('vi:codes', []).filter((c) => RX_CODE.test(c));
     $('#anciens-codes').innerHTML = codes.length
-      ? '<p class="muted petit">Déjà utilisé sur cet appareil :</p>' + codes.map((c) =>
-          `<span class="puce-code"><button type="button" data-code="${esc(c)}">${esc(c)}</button><button type="button" class="retirer" data-retirer="${esc(c)}" aria-label="Retirer ${esc(c)} de cet appareil">✕</button></span>`).join('')
+      ? '<p class="muted petit">Déjà utilisé sur cet appareil' + (LOCAL ? '' : ' (ton NIP sera demandé)') + ' :</p>' + codes.map((c) =>
+          `<span class="puce-code"><button type="button" data-code="${esc(c)}">${esc(codeAffiche(c))}</button><button type="button" class="retirer" data-retirer="${esc(c)}" aria-label="Retirer ce code de cet appareil">✕</button></span>`).join('')
       : '';
     afficher('ecran-connexion');
-    $('#in-groupe').focus();
+    (LOCAL || $('#in-ecole').value ? $('#in-groupe') : $('#in-ecole')).focus();
   }
-  function connecter(code) {
-    const [groupe] = code.split('-');
-    eleve = { code, groupe };
-    profil = chargerProfil(code);
-    VI.store.set('vi:dernier', code);
-    const codes = VI.store.get('vi:codes', []).filter((c) => c !== code);
+  function montrerEtape(etape, mode) {
+    $('#etape-code').hidden = etape !== 'code';
+    $('#etape-nip').hidden = etape !== 'nip';
+    $('#erreur-connexion').textContent = '';
+    if (etape === 'nip') {
+      const premiere = mode === 'register';
+      $('#nip-titre').innerHTML = premiere
+        ? `Première connexion pour <b>${esc(codeAffiche(etapeNip.code))}</b> 🎉<br>Choisis un NIP de 4 chiffres. <b>Garde-le secret</b> : il protège ta progression.`
+        : `Bon retour, <b>${esc(codeAffiche(etapeNip.code))}</b> !<br>Entre ton NIP.` + (mode === 'offline' ? ' <span class="muted">(hors-ligne)</span>' : '');
+      $('#champ-nip2').hidden = !premiere;
+      $('#in-nip').value = ''; $('#in-nip2').value = '';
+      $('#in-nip').setAttribute('autocomplete', premiere ? 'new-password' : 'current-password');
+      $('#btn-nip-oublie').hidden = premiere;
+      $('#in-nip').focus();
+    }
+  }
+  function erreurConnexion(msg, champ) { $('#erreur-connexion').textContent = msg; if (champ) { champ.focus(); if (champ.select) champ.select(); } }
+  function occupe(btn, oui, texte) { btn.disabled = oui; if (texte) btn.textContent = texte; }
+
+  // Étape 1 : école, groupe, initiales
+  async function validerCode(codeImpose) {
+    let code = codeImpose;
+    if (!code) {
+      const { ec, g, i, code: c } = lireCode();
+      if (!LOCAL && !ec) return erreurConnexion('Choisis ton école.', $('#in-ecole'));
+      if (!/^\d{1,4}$/.test(g)) return erreurConnexion('Entre ton numéro de groupe (des chiffres seulement).', $('#in-groupe'));
+      if (!/^[A-Z]{2,4}\d?$/.test(i)) return erreurConnexion('Entre 2 à 4 initiales (lettres), suivies au besoin d\'un chiffre.', $('#in-initiales'));
+      code = c;
+      if (!LOCAL) VI.store.set('vi:ecole', ec);
+    }
+    if (LOCAL) return reussirConnexion(code, null, null);
+    const btn = $('#btn-continuer'); occupe(btn, true, 'Vérification…');
+    try {
+      const rep = await VI.api('studentCheck', { code }, 10000);
+      if (!rep.groupeExiste) return erreurConnexion(`Ce groupe n'existe pas dans cette école. Vérifie le numéro avec ton enseignant·e.`, $('#in-groupe'));
+      etapeNip = { code, mode: rep.nipDefini ? 'login' : 'register' };
+    } catch (e) {
+      if (e.serveur) return erreurConnexion(e.message);
+      if (!VI.store.get('vi:nip:' + code, null)) return erreurConnexion('Pas de connexion Internet. Ta première connexion doit se faire en ligne.');
+      etapeNip = { code, mode: 'offline' };
+    } finally { occupe(btn, false, 'Continuer →'); }
+    montrerEtape('nip', etapeNip.mode);
+  }
+
+  // Étape 2 : NIP
+  async function validerNip() {
+    const nip = $('#in-nip').value.trim();
+    if (!/^\d{4}$/.test(nip)) return erreurConnexion('Ton NIP contient exactement 4 chiffres.', $('#in-nip'));
+    const { code, mode } = etapeNip;
+    if (mode === 'register' && $('#in-nip2').value.trim() !== nip) return erreurConnexion('Les deux NIP ne sont pas identiques.', $('#in-nip2'));
+    const emp = await empreinte(code + '|' + nip);
+    if (mode === 'offline') {
+      if (!emp || emp !== VI.store.get('vi:nip:' + code, null)) return erreurConnexion('NIP incorrect.', $('#in-nip'));
+      return reussirConnexion(code, null, null);
+    }
+    const btn = $('#btn-entrer'); occupe(btn, true, 'Connexion…');
+    try {
+      const rep = await VI.api(mode === 'register' ? 'studentRegister' : 'studentLogin', { code, pin: nip }, 15000);
+      if (emp) VI.store.set('vi:nip:' + code, emp);
+      reussirConnexion(code, rep.token, rep.progression);
+    } catch (e) {
+      erreurConnexion(e.serveur ? e.message : 'Impossible de joindre le serveur. Réessaie dans un instant.', $('#in-nip'));
+    } finally { occupe(btn, false, 'Entrer'); }
+  }
+
+  function reussirConnexion(code, tokenNeuf, progressionServeur) {
+    if (tokenNeuf) VI.store.set('vi:jeton:' + code, tokenNeuf);
+    ecrireSessionOnglet(code);
+    const m = RX_CODE.exec(code);
+    eleve = { code, ecole: m[1], groupe: m[1] + '-' + m[2], nomEcole: nomEcole(m[1]) };
+    // Progression : appareil + serveur (+ ancienne progression locale « 21-AB » des versions précédentes)
+    let local = VI.store.get('vi:eleve:' + code, null);
+    const ancienne = VI.store.get('vi:eleve:' + m[2] + '-' + m[3], null);
+    if (ancienne) { local = fusionnerProfils(local, ancienne); VI.store.del('vi:eleve:' + m[2] + '-' + m[3]); }
+    const fusion = fusionnerProfils(local, progressionServeur);
+    profil = Object.assign(profilVide(), fusion || {});
+    sauverProfil();
+    if (!LOCAL && JSON.stringify(fusion) !== JSON.stringify(progressionServeur)) VI.store.set('vi:sale:' + code, true);
+    const codes = VI.store.get('vi:codes', []).filter((c) => c !== code && RX_CODE.test(c));
     codes.unshift(code);
     VI.store.set('vi:codes', codes.slice(0, 8));
     afficherAccueil();
+    viderFile();
   }
 
-  $('#form-connexion').addEventListener('input', () => { $('#apercu-code').textContent = lireCode().code || '—'; $('#erreur-connexion').textContent = ''; });
-  // Vérifie que le groupe a été créé par un enseignant.
-  // Renvoie false seulement si on est SÛR qu'il n'existe pas (hors-ligne : on laisse passer).
-  async function groupeExiste(g) {
-    if (!VI.urlConfiguree()) return true;
-    try {
-      const rep = await VI.api('getGroups', {}, 8000);
-      const liste = (rep.groupes || []).map(String);
-      VI.store.set('vi:groupes', liste);
-      return liste.length === 0 || liste.includes(g); // aucun groupe créé : ancienne configuration, on accepte
-    } catch (e) { return true; }
-  }
-
-  $('#form-connexion').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const { g, i, code } = lireCode();
-    if (!/^\d{1,4}$/.test(g)) { $('#erreur-connexion').textContent = 'Entre ton numéro de groupe (des chiffres seulement).'; $('#in-groupe').focus(); return; }
-    if (!/^[A-Z]{2,4}\d?$/.test(i)) { $('#erreur-connexion').textContent = 'Entre 2 à 4 initiales (lettres), suivies au besoin d\'un chiffre.'; $('#in-initiales').focus(); return; }
-    const btn = $('#form-connexion button[type=submit]');
-    btn.disabled = true; btn.textContent = 'Vérification…';
-    const ok = await groupeExiste(g);
-    btn.disabled = false; btn.textContent = 'C\'est parti →';
-    if (!ok) {
-      $('#erreur-connexion').textContent = `Le groupe ${g} n'existe pas. Vérifie le numéro avec ton enseignant·e.`;
-      $('#in-groupe').focus(); $('#in-groupe').select();
-      return;
-    }
-    connecter(code);
-  });
+  $('#form-connexion').addEventListener('input', () => { $('#apercu-code').textContent = lireCode().code ? codeAffiche(lireCode().code) : '—'; $('#erreur-connexion').textContent = ''; });
+  $('#form-connexion').addEventListener('submit', (e) => { e.preventDefault(); if (!$('#etape-nip').hidden) validerNip(); else validerCode(); });
+  $('#btn-retour-code').addEventListener('click', () => { etapeNip = null; montrerEtape('code'); $('#in-groupe').focus(); });
+  $('#btn-nip-oublie').addEventListener('click', () => erreurConnexion('Demande à ton enseignant·e de réinitialiser ton NIP. Ta progression sera conservée.'));
   $('#anciens-codes').addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.code) connecter(b.dataset.code);
+    if (b.dataset.code) {
+      const m = RX_CODE.exec(b.dataset.code);
+      if (!LOCAL) { $('#in-ecole').value = m[1]; }
+      $('#in-groupe').value = m[2]; $('#in-initiales').value = m[3];
+      validerCode(b.dataset.code);
+    }
     if (b.dataset.retirer) {
-      VI.store.set('vi:codes', VI.store.get('vi:codes', []).filter((c) => c !== b.dataset.retirer));
-      VI.store.del('vi:eleve:' + b.dataset.retirer);
+      const c = b.dataset.retirer;
+      VI.store.set('vi:codes', VI.store.get('vi:codes', []).filter((x) => x !== c));
+      ['vi:eleve:', 'vi:jeton:', 'vi:nip:', 'vi:sale:'].forEach((k) => VI.store.del(k + c));
       afficherConnexion();
     }
   });
-  $('#btn-changer-eleve').addEventListener('click', () => { VI.store.del('vi:dernier'); afficherConnexion(); });
+  $('#btn-changer-eleve').addEventListener('click', afficherConnexion);
+
+  /* ---------------- Fusion de deux progressions (appareil + serveur) ---------------- */
+  function profilVide() { return { xp: 0, boites: {}, badges: [], jours: [], sprint: {}, historique: [] }; }
+  function fusionnerProfils(a, b) {
+    if (!a) return b ? Object.assign(profilVide(), b) : null;
+    if (!b) return Object.assign(profilVide(), a);
+    const r = profilVide();
+    r.xp = Math.max(a.xp || 0, b.xp || 0);
+    r.boites = Object.assign({}, b.boites || {});
+    Object.entries(a.boites || {}).forEach(([k, v]) => { const w = r.boites[k]; if (!w || (v.vu || 0) > (w.vu || 0)) r.boites[k] = v; });
+    r.badges = [...new Set([...(a.badges || []), ...(b.badges || [])])];
+    r.jours = [...new Set([...(a.jours || []), ...(b.jours || [])])].sort().slice(-60);
+    r.sprint = Object.assign({}, b.sprint || {});
+    Object.entries(a.sprint || {}).forEach(([k, v]) => { r.sprint[k] = Math.max(v, r.sprint[k] || 0); });
+    const h = {}; [...(a.historique || []), ...(b.historique || [])].forEach((x) => { h[x.d + x.mode] = x; });
+    r.historique = Object.values(h).sort((x, y) => x.d - y.d).slice(-50);
+    return r;
+  }
 
   /* ---------------- Accueil ---------------- */
   function afficherAccueil() {
     majEntete();
     const totalM = [1, 2, 3, 4].reduce((s, b) => s + maitrise(b).ok, 0);
     const totalV = [1, 2, 3, 4].reduce((s, b) => s + maitrise(b).voie, 0);
-    $('#titre-accueil').textContent = 'Salut ' + eleve.code + ' !';
+    $('#titre-accueil').textContent = 'Salut ' + eleve.code.split('-').slice(1).join('-') + ' !';
     const sj = serieJours();
     $('#message-accueil').textContent = !profil.historique.length
       ? 'Commence par « Étudier » pour découvrir les familles de verbes, puis teste-toi.'
@@ -184,17 +299,20 @@
 
     // Modes
     const nbDiff = difficilesDuBloc(choix.bloc).length;
-    $('#grille-modes').innerHTML = Object.entries(MODES).map(([id, m]) => {
-      let extra = '';
-      if (id === 'sprint' && profil.sprint[choix.bloc]) extra = `<span class="mode-extra">Record : ${profil.sprint[choix.bloc]}</span>`;
-      if (id === 'difficiles') extra = `<span class="mode-extra">${nbDiff ? nbDiff + ' à revoir' : 'Rien à revoir 🎉'}</span>`;
-      const off = id === 'difficiles' && !nbDiff;
-      return `<button class="mode" data-mode="${id}" ${off ? 'disabled' : ''}>
-        <span class="mode-icone" aria-hidden="true">${m.icone}</span>
-        <span class="mode-titre">${m.titre}</span>
-        <span class="mode-desc">${m.desc}</span>${extra}
-      </button>`;
-    }).join('');
+    const nbPhrases = phrasesDuBloc(choix.bloc).length;
+    $('#grille-modes').innerHTML = Object.entries(GROUPES_MODES).map(([g, titreG]) => `<h3 class="groupe-modes">${titreG}</h3>` +
+      Object.entries(MODES).filter(([, m]) => m.groupe === g).map(([id, m]) => {
+        let extra = '', off = false;
+        if (id === 'sprint' && profil.sprint[choix.bloc]) extra = `<span class="mode-extra">Record : ${profil.sprint[choix.bloc]}</span>`;
+        if (id === 'vraifaux' && profil.sprint['vf' + choix.bloc]) extra = `<span class="mode-extra">Record : ${profil.sprint['vf' + choix.bloc]}</span>`;
+        if (id === 'difficiles') { extra = `<span class="mode-extra">${nbDiff ? nbDiff + ' à revoir' : 'Rien à revoir 🎉'}</span>`; off = !nbDiff; }
+        if ((id === 'phrases' || id === 'erreurs') && nbPhrases < 5) { extra = '<span class="mode-extra">Pas assez de phrases pour ce bloc</span>'; off = true; }
+        return `<button class="mode" data-mode="${id}" ${off ? 'disabled' : ''}>
+          <span class="mode-icone" aria-hidden="true">${m.icone}</span>
+          <span class="mode-titre">${m.titre}</span>
+          <span class="mode-desc">${m.desc}</span>${extra}
+        </button>`;
+      }).join('')).join('');
 
     // Options de forme
     $$('#seg-forme button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.forme === choix.forme)));
@@ -268,10 +386,11 @@
   /* ---------------- Démarrer une activité ---------------- */
   function demarrer(mode) {
     if (mode === 'etude') return afficherEtude();
+    if (mode === 'phrases' || mode === 'erreurs' || mode === 'vraifaux') return demarrerSpecial(mode);
     const pool = mode === 'difficiles' ? difficilesDuBloc(choix.bloc) : verbesDuBloc(choix.bloc);
     if (!pool.length) { VI.toast('Aucun verbe disponible pour ce bloc.'); return; }
     session = {
-      id: VI.uid(), mode, bloc: choix.bloc, pool, debut: Date.now(), index: 0,
+      id: VI.uid(), mode, type: 'formes', bloc: choix.bloc, pool, debut: Date.now(), index: 0,
       total: mode === 'quiz' ? CONFIG.questionsQuiz : mode === 'entrainement' ? CONFIG.questionsEntrainement
            : mode === 'difficiles' ? Math.min(CONFIG.questionsDifficiles, Math.max(pool.length * 2, 4)) : Infinity,
       file: [], recents: [], resultats: [], points: 0, max: 0, serie: 0, serieMax: 0, xp: 0,
@@ -283,10 +402,12 @@
     $('#btn-indice').innerHTML = mode === 'quiz' ? '💡 Indice <small>(−50 %)</small>' : '💡 Indice';
     $('#serie-live').textContent = '';
     if (mode === 'sprint') {
-      session.fin = Date.now() + CONFIG.dureeSprintSecondes * 1000;
+      session.dureeMs = CONFIG.dureeSprintSecondes * 1000;
+      session.fin = Date.now() + session.dureeMs;
       session.minuterie = setInterval(tic, 200);
     }
     afficher('ecran-exercice');
+    montrerCarte('formes');
     nouvelleQuestion();
     if (mode === 'sprint') tic();
   }
@@ -294,7 +415,7 @@
   function tic() {
     const reste = Math.max(0, session.fin - Date.now());
     $('#compteur').textContent = '⏱ ' + Math.ceil(reste / 1000) + ' s · ' + session.points + ' ✓';
-    $('#progression-barre').style.width = (reste / (CONFIG.dureeSprintSecondes * 1000)) * 100 + '%';
+    $('#progression-barre').style.width = (reste / session.dureeMs) * 100 + '%';
     $('#progression-barre').classList.toggle('urgent', reste < 10000);
     if (reste <= 0) terminer();
   }
@@ -452,9 +573,12 @@
     const s = session; if (!s) return;
     clearTimeout(s.auto);
     s.index++;
-    if (s.mode === 'sprint' && Date.now() >= s.fin) return terminer();
+    if (s.fin && Date.now() >= s.fin) return terminer();
     if (s.index >= s.total) return terminer();
-    nouvelleQuestion();
+    if (s.type === 'phrase') nouvellePhrase();
+    else if (s.type === 'chasse') nouvelleManche();
+    else if (s.type === 'vf') nouveauVF();
+    else nouvelleQuestion();
   }
 
   $('#btn-quitter').addEventListener('click', () => {
@@ -468,6 +592,265 @@
     clearInterval(session.minuterie); clearTimeout(session.auto);
     session = null; q = null;
   }
+
+  /* ---------------- Activités en contexte et défis ---------------- */
+  function phrasesDuBloc(b) {
+    const parBase = {};
+    verbesDuBloc(b).forEach((v) => { parBase[VI.norm(VI.premiere(v.base))] = v; });
+    return PHRASES.filter((p) => parBase[VI.norm(p.v)]).map((p) => Object.assign({ verbe: parBase[VI.norm(p.v)] }, p));
+  }
+  const CARTES = { formes: 'form-question', phrase: 'form-phrase', vf: 'carte-vf', chasse: 'form-chasse' };
+  function montrerCarte(type) {
+    Object.values(CARTES).forEach((id) => { $('#' + id).hidden = id !== CARTES[type]; });
+    $$('[data-etiquette]').forEach((el) => { el.textContent = MODES[session.mode].icone + ' ' + MODES[session.mode].titre + ' · Bloc ' + session.bloc; });
+  }
+  function majBoite(v, tout, indice) {
+    const cle = VI.cle(v);
+    const st = profil.boites[cle] || { b: 0, vu: 0 };
+    st.vu++;
+    if (tout && !indice) st.b = st.b === 0 ? 2 : Math.min(5, st.b + 1);
+    else if (tout) st.b = Math.max(1, st.b);
+    else st.b = 1;
+    profil.boites[cle] = st;
+  }
+  function majSerie(ok) {
+    const s = session;
+    if (ok) { s.serie++; s.serieMax = Math.max(s.serieMax, s.serie); } else s.serie = 0;
+    $$('[data-serie]').forEach((el) => { el.textContent = s.serie >= 3 ? '🔥 ' + s.serie + ' de suite' : ''; });
+    if (s.serie === 5) VI.toast('🔥 5 de suite !');
+    if (s.serie === 10) { VI.toast('🔥🔥 10 de suite ! Incroyable.'); VI.confettis(); }
+  }
+  function progression() {
+    const s = session;
+    if (s.type === 'vf') return;
+    $('#compteur').textContent = s.type === 'chasse' ? 'Manche ' + (s.index + 1) + ' / ' + s.total : (s.index + 1) + ' / ' + s.total;
+    $('#progression-barre').style.width = (s.index / s.total) * 100 + '%';
+  }
+  const animer = (el, ok) => { el.classList.remove('anim-ok', 'anim-ko'); void el.offsetWidth; el.classList.add(ok ? 'anim-ok' : 'anim-ko'); };
+  const hasard = (t) => t[Math.floor(Math.random() * t.length)];
+  // Met en évidence l'indice de temps dans un texte déjà échappé
+  const surligner = (texteEsc, indice) => {
+    if (!indice) return texteEsc;
+    const i = esc(indice), pos = texteEsc.indexOf(i);
+    return pos < 0 ? texteEsc : texteEsc.slice(0, pos) + '<mark>' + i + '</mark>' + texteEsc.slice(pos + i.length);
+  };
+  function phraseHtml(p, verbeHtml) {
+    const [avant, apres] = p.s.split('___');
+    const a = surligner(esc(avant), p.c);
+    const b = a.includes('<mark>') ? esc(apres) : surligner(esc(apres), p.c);
+    return a + verbeHtml + b;
+  }
+
+  function demarrerSpecial(mode) {
+    const pool = verbesDuBloc(choix.bloc);
+    const phrases = phrasesDuBloc(choix.bloc);
+    if (mode !== 'vraifaux' && phrases.length < 5) { VI.toast('Pas assez de phrases pour ce bloc.'); return; }
+    session = {
+      id: VI.uid(), mode, bloc: choix.bloc, pool, phrases, debut: Date.now(), index: 0,
+      type: mode === 'phrases' ? 'phrase' : mode === 'erreurs' ? 'chasse' : 'vf',
+      total: mode === 'phrases' ? C.questionsPhrases : mode === 'erreurs' ? C.manchesChasse : Infinity,
+      recents: [], recentsP: [], resultats: [], points: 0, max: 0, serie: 0, serieMax: 0, xp: 0,
+      maitriseAvant: maitrise(choix.bloc).ok, minuterie: null, auto: null
+    };
+    afficher('ecran-exercice');
+    montrerCarte(session.type);
+    $$('[data-serie]').forEach((el) => { el.textContent = ''; });
+    if (session.type === 'vf') {
+      session.dureeMs = C.dureeVraiFaux * 1000;
+      session.fin = Date.now() + session.dureeMs;
+      session.minuterie = setInterval(tic, 200);
+      nouveauVF(); tic();
+    } else if (session.type === 'phrase') nouvellePhrase();
+    else nouvelleManche();
+  }
+
+  /* ----- Phrases à compléter ----- */
+  function nouvellePhrase() {
+    const s = session;
+    const verbes = [...new Set(s.phrases.map((p) => p.verbe))];
+    const v = choisirVerbe(verbes);
+    s.recents.push(VI.cle(v)); if (s.recents.length > Math.min(4, verbes.length - 1)) s.recents.shift();
+    const options = s.phrases.filter((p) => p.verbe === v);
+    const p = hasard(options.filter((x) => !s.recentsP.includes(x.s)).length ? options.filter((x) => !s.recentsP.includes(x.s)) : options);
+    s.recentsP.push(p.s); s.recentsP = s.recentsP.slice(-30);
+    q = { type: 'phrase', verbe: v, p, aIndice: false, verifie: false };
+    progression();
+    const [avant, apres] = p.s.split('___');
+    $('#phrase-texte').innerHTML = esc(avant) +
+      `<input id="rep-phrase" type="text" lang="en" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="Le verbe ${esc(VI.premiere(v.base))} au bon temps">` +
+      ` <span class="verbe-base">(${esc(VI.premiere(v.base))})</span>` + esc(apres);
+    $('#phrase-indice').textContent = '';
+    $('#retro-phrase').className = 'retro'; $('#retro-phrase').innerHTML = '';
+    $('#btn-valider-phrase').innerHTML = 'Vérifier <kbd>Entrée</kbd>';
+    $('#btn-indice-phrase').disabled = false;
+    $('#form-phrase').classList.remove('anim-ok', 'anim-ko');
+    $('#rep-phrase').focus();
+  }
+  $('#btn-indice-phrase').addEventListener('click', () => {
+    if (!q || q.type !== 'phrase' || q.verifie) return;
+    q.aIndice = true;
+    $('#phrase-indice').innerHTML = `💡 En français : <b>${esc(VI.premiere(q.verbe.fr))}</b> · La réponse commence par « <b>${esc(VI.premiere(q.p.r)[0])}</b> » et compte ${VI.premiere(q.p.r).length} lettres.`;
+    $('#btn-indice-phrase').disabled = true;
+    $('#rep-phrase').focus();
+  });
+  $('#form-phrase').addEventListener('submit', (e) => { e.preventDefault(); if (!q || q.type !== 'phrase') return; if (q.verifie) suivante(); else verifierPhrase(); });
+  function verifierPhrase() {
+    const s = session, p = q.p, v = q.verbe;
+    q.verifie = true;
+    const inp = $('#rep-phrase');
+    const ok = VI.verifier('passe', inp.value, p.r);
+    inp.readOnly = true; inp.classList.add(ok ? 'ok' : 'ko');
+    s.points += ok ? (q.aIndice ? 0.5 : 1) : 0; s.max += 1;
+    const gain = ok ? (q.aIndice ? 4 : 8) : 0; s.xp += gain;
+    majBoite(v, ok, q.aIndice);
+    majSerie(ok && !q.aIndice);
+    s.resultats.push({ base: VI.premiere(v.base), tout: ok, indice: q.aIndice });
+    animer($('#form-phrase'), ok);
+    const reponse = VI.variantes(p.r).join(' / ');
+    const plein = p.s.replace('___', VI.premiere(p.r));
+    $('#retro-phrase').className = 'retro visible ' + (ok ? 'ok' : 'ko');
+    $('#retro-phrase').innerHTML =
+      `<p class="retro-titre">${ok ? '✅ ' + esc(hasard(BRAVO)) : '💪 La bonne réponse : <b class="mono">' + esc(reponse) + '</b>'} ${gain ? `<span class="xp">+${gain} XP</span>` : ''}</p>
+      <div class="retro-famille">
+        <p class="phrase-complete" lang="en">${phraseHtml(p, '<b class="rep">' + esc(reponse) + '</b>')}
+          ${VI.audioDispo() ? `<button type="button" class="btn-icone btn-audio" data-dire="${esc(plein)}" aria-label="Écouter la phrase">🔊</button>` : ''}</p>
+        <p class="muted"><span class="tag-forme">${esc(VI.LIBELLE_FORME[p.f])}</span> ${esc(VI.explication(p.f, p.c))}</p>
+      </div>`;
+    $('#btn-indice-phrase').disabled = true;
+    $('#btn-valider-phrase').innerHTML = 'Suivant → <kbd>Entrée</kbd>';
+    $('#btn-valider-phrase').focus();
+  }
+  $('#retro-phrase').addEventListener('click', (e) => { const a = e.target.closest('[data-dire]'); if (a) VI.parler(a.dataset.dire); });
+
+  /* ----- Chasse aux erreurs ----- */
+  function nouvelleManche() {
+    const s = session;
+    const choisies = [], vus = new Set();
+    for (const p of VI.melanger(s.phrases)) { if (vus.has(p.v)) continue; vus.add(p.v); choisies.push(p); if (choisies.length === 5) break; }
+    const nbErreurs = Math.random() < 0.5 ? 2 : 3;
+    const avecErreur = new Set(VI.melanger([...choisies.keys()]).slice(0, nbErreurs));
+    q = { type: 'chasse', verifie: false, items: choisies.map((p, i) => {
+      let affiche = VI.premiere(p.r), faux = false;
+      if (avecErreur.has(i)) { const f = VI.fausseFormePhrase(p, p.verbe); if (f) { affiche = f; faux = true; } }
+      return { p, affiche, faux, signale: false };
+    }) };
+    progression();
+    $('#liste-chasse').innerHTML = q.items.map((it, i) => `<li data-i="${i}">
+      <p class="phrase-chasse" lang="en">${esc(it.p.s.split('___')[0])}<button type="button" class="chip-verbe" data-i="${i}" aria-pressed="false" title="Clique si ce verbe est mal conjugué">${esc(it.affiche)}</button>${esc(it.p.s.split('___')[1])}</p>
+      <div class="correction-chasse" hidden><label>Correction : <input type="text" data-i="${i}" lang="en" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="bonne forme"></label></div>
+      <div class="retro-chasse"></div></li>`).join('');
+    $('#retro-chasse').className = 'retro'; $('#retro-chasse').innerHTML = '';
+    $('#btn-valider-chasse').innerHTML = 'Vérifier <kbd>Entrée</kbd>';
+    $('#form-chasse').classList.remove('anim-ok', 'anim-ko');
+    const premier = $('#liste-chasse .chip-verbe'); if (premier) premier.focus();
+  }
+  $('#liste-chasse').addEventListener('click', (e) => {
+    const b = e.target.closest('.chip-verbe'); if (!b || !q || q.type !== 'chasse' || q.verifie) return;
+    const it = q.items[b.dataset.i];
+    it.signale = !it.signale;
+    b.setAttribute('aria-pressed', String(it.signale));
+    const zone = b.closest('li').querySelector('.correction-chasse');
+    zone.hidden = !it.signale;
+    if (it.signale) zone.querySelector('input').focus();
+  });
+  $('#form-chasse').addEventListener('submit', (e) => {
+    e.preventDefault(); if (!q || q.type !== 'chasse') return;
+    if (q.verifie) return suivante();
+    // Entrée dans une case de correction : on vérifie seulement si on vient du bouton
+    if (document.activeElement && document.activeElement.matches('#liste-chasse input')) { $('#btn-valider-chasse').focus(); return; }
+    verifierChasse();
+  });
+  function verifierChasse() {
+    const s = session;
+    q.verifie = true;
+    let pts = 0, max = 0, trouvees = 0, total = 0;
+    q.items.forEach((it, i) => {
+      const li = $(`#liste-chasse li[data-i="${i}"]`);
+      const inp = li.querySelector('input');
+      inp.readOnly = true;
+      const bonne = esc(VI.variantes(it.p.r).join(' / '));
+      const expl = `<span class="tag-forme">${esc(VI.LIBELLE_FORME[it.p.f])}</span> ${esc(VI.explication(it.p.f, it.p.c))}`;
+      let p = 0, m = 0, msg = '', classe = '';
+      if (it.faux) {
+        total++; m = 2;
+        const corr = it.signale && VI.verifier('passe', inp.value, it.p.r);
+        if (it.signale) { p++; trouvees++; }
+        if (corr) p++;
+        if (corr) { classe = 'ok'; msg = `✅ Bien vu et bien corrigé : <b>${bonne}</b>`; }
+        else if (it.signale) { classe = 'moyen'; msg = `🟠 Bien repéré ! La bonne forme est <b>${bonne}</b>. ${expl}`; }
+        else { classe = 'ko'; msg = `❌ Erreur non repérée : « ${esc(it.affiche)} » → <b>${bonne}</b>. ${expl}`; }
+      } else {
+        m = 1;
+        if (it.signale) { classe = 'ko'; msg = `⚠️ Ce verbe était correct ! ${expl}`; }
+        else { p = 1; classe = 'ok'; msg = '✓ Correct'; }
+      }
+      pts += p; max += m;
+      li.classList.add(classe);
+      li.querySelector('.chip-verbe').disabled = true;
+      li.querySelector('.retro-chasse').innerHTML = `<p>${msg}</p>`;
+      s.resultats.push({ base: VI.premiere(it.p.verbe.base), tout: p === m, indice: false });
+    });
+    s.points += pts; s.max += max;
+    const gain = pts * 3; s.xp += gain;
+    majSerie(pts === max);
+    animer($('#form-chasse'), pts === max);
+    $('#retro-chasse').className = 'retro visible ' + (pts === max ? 'ok' : 'ko');
+    $('#retro-chasse').innerHTML = `<p class="retro-titre">${pts === max ? '🕵️ Manche parfaite !' : '🔎 ' + trouvees + ' erreur' + (trouvees > 1 ? 's' : '') + ' repérée' + (trouvees > 1 ? 's' : '') + ' sur ' + total + '.'} <span class="xp">+${gain} XP</span></p>`;
+    $('#btn-valider-chasse').innerHTML = (s.index + 1 >= s.total ? 'Voir mes résultats' : 'Manche suivante →') + ' <kbd>Entrée</kbd>';
+    $('#btn-valider-chasse').focus();
+  }
+
+  /* ----- Vrai ou faux éclair ----- */
+  function nouveauVF() {
+    const s = session;
+    let candidats = s.pool.filter((v) => !s.recents.includes(VI.cle(v)));
+    if (!candidats.length) candidats = s.pool;
+    const v = hasard(candidats);
+    s.recents.push(VI.cle(v)); if (s.recents.length > Math.min(5, s.pool.length - 1)) s.recents.shift();
+    const formes = { base: VI.premiere(v.base), passe: hasard(VI.variantes(v.passe)), participe: hasard(VI.variantes(v.participe)) };
+    let fausse = null;
+    if (Math.random() < 0.5) {
+      const col = Math.random() < 0.5 ? 'passe' : 'participe';
+      const f = VI.fausseForme(v, col) || VI.fausseForme(v, col === 'passe' ? 'participe' : 'passe');
+      if (f) { fausse = VI.fausseForme(v, col) ? col : (col === 'passe' ? 'participe' : 'passe'); formes[fausse] = f; }
+    }
+    q = { type: 'vf', verbe: v, vrai: !fausse, formes, verifie: false };
+    $('#vf-trio').innerHTML = ['base', 'passe', 'participe'].map((c) => `<span>${esc(formes[c])}</span>`).join('<i aria-hidden="true">→</i>');
+    $('#vf-fr').textContent = VI.premiere(v.fr);
+    $('#vf-correction').innerHTML = '';
+    $('#carte-vf').classList.remove('vf-ok', 'vf-ko');
+    $('#btn-vrai').disabled = false; $('#btn-faux').disabled = false;
+  }
+  function repondreVF(reponseVrai) {
+    const s = session;
+    if (!q || q.type !== 'vf' || q.verifie) return;
+    q.verifie = true;
+    const ok = reponseVrai === q.vrai;
+    s.points += ok ? 1 : 0; s.max += 1;
+    if (ok) s.xp += 3;
+    majSerie(ok);
+    s.resultats.push({ base: VI.premiere(q.verbe.base), tout: ok, indice: false });
+    const carte = $('#carte-vf');
+    carte.classList.add(ok ? 'vf-ok' : 'vf-ko');
+    $('#btn-vrai').disabled = true; $('#btn-faux').disabled = true;
+    if (!ok) $('#vf-correction').innerHTML = (q.vrai ? 'C\'était vrai : ' : 'Correct : ') + `<b class="mono">${esc([q.verbe.base, q.verbe.passe, q.verbe.participe].map((x) => VI.variantes(x).join('/')).join(' → '))}</b>`;
+    tic();
+    s.auto = setTimeout(() => { if (session === s) { if (Date.now() >= s.fin) terminer(); else nouveauVF(); } }, ok ? 380 : 1700);
+  }
+  $('#btn-vrai').addEventListener('click', () => repondreVF(true));
+  $('#btn-faux').addEventListener('click', () => repondreVF(false));
+  document.addEventListener('keydown', (e) => {
+    if (!session || session.type !== 'vf' || $('#ecran-exercice').hidden) return;
+    if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'v') { e.preventDefault(); repondreVF(true); }
+    if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'f') { e.preventDefault(); repondreVF(false); }
+  });
+  let toucheX = null;
+  $('#carte-vf').addEventListener('touchstart', (e) => { toucheX = e.touches[0].clientX; }, { passive: true });
+  $('#carte-vf').addEventListener('touchend', (e) => {
+    if (toucheX == null) return;
+    const dx = e.changedTouches[0].clientX - toucheX; toucheX = null;
+    if (Math.abs(dx) > 60) repondreVF(dx > 0);
+  });
 
   /* ---------------- Fin d'activité ---------------- */
   function terminer() {
@@ -486,7 +869,9 @@
     if (!profil.jours.includes(VI.aujourdhui())) profil.jours.push(VI.aujourdhui());
     profil.jours = profil.jours.slice(-60);
     let record = false;
-    if (s.mode === 'sprint' && s.points > (profil.sprint[s.bloc] || 0)) { profil.sprint[s.bloc] = s.points; record = s.points > 0; }
+    const chrono = s.mode === 'sprint' || s.mode === 'vraifaux';
+    const cleRecord = s.mode === 'vraifaux' ? 'vf' + s.bloc : s.bloc;
+    if (chrono && s.points > (profil.sprint[cleRecord] || 0)) { profil.sprint[cleRecord] = s.points; record = s.points > 0; }
     profil.historique.push({ d: Date.now(), bloc: s.bloc, mode: s.mode, pct });
     profil.historique = profil.historique.slice(-50);
 
@@ -497,6 +882,9 @@
     if (s.serieMax >= 10) gagner('serie10');
     if (s.mode === 'sprint' && s.points >= 15) gagner('eclair');
     if (s.mode === 'quiz' && pct === 100 && !s.resultats.some((r) => r.indice)) gagner('parfait');
+    if (s.mode === 'phrases' && pct === 100 && !s.resultats.some((r) => r.indice)) gagner('contexte');
+    if (s.mode === 'erreurs' && pct === 100) gagner('detective');
+    if (s.mode === 'vraifaux' && s.points >= 20) gagner('lynx');
     if (serieJours() >= 3) gagner('constance');
     [1, 2, 3, 4].forEach((b) => { const m = maitrise(b); if (m.total && m.ok === m.total) gagner('maitre' + b); });
     sauverProfil();
@@ -513,10 +901,10 @@
     const mApres = etatApres.ok;
     const gain = mApres - s.maitriseAvant;
     $('#anneau').style.setProperty('--pct', pct);
-    $('#res-pct').textContent = s.mode === 'sprint' ? s.points : pct + ' %';
-    $('#anneau').classList.toggle('sprint', s.mode === 'sprint');
-    $('#res-titre').textContent = s.mode === 'sprint'
-      ? (record ? 'Nouveau record ! 🏆' : s.points + ' verbe' + (s.points > 1 ? 's' : '') + ' en ' + CONFIG.dureeSprintSecondes + ' s')
+    $('#res-pct').textContent = chrono ? s.points : pct + ' %';
+    $('#anneau').classList.toggle('sprint', chrono);
+    $('#res-titre').textContent = chrono
+      ? (record ? 'Nouveau record ! 🏆' : s.points + ' bonne' + (s.points > 1 ? 's' : '') + ' réponse' + (s.points > 1 ? 's' : '') + ' en ' + Math.round(s.dureeMs / 1000) + ' s')
       : pct >= 90 ? 'Excellent travail ! 🌟' : pct >= 75 ? 'Très bien ! 👏' : pct >= 50 ? 'Beau progrès ! 💪' : 'Chaque essai te fait progresser 🌱';
     const E = etatApres;
     $('#res-message').innerHTML = (gain > 0 ? `<b>+${pluriel(gain, 'verbe')} maîtrisé${gain > 1 ? 's' : ''} ! 🎉</b><br>` : '') +
@@ -548,7 +936,7 @@
     majEntete();
     afficher('ecran-resultats');
     if (pct >= 90 || record || nouveaux.length) VI.confettis();
-    nouveaux.forEach((b, i) => setTimeout(() => VI.toast(`<span class="toast-icone">${b.icone}</span> Nouveau badge : <b>${esc(b.nom)}</b>`, 'badge'), 400 + i * 900));
+    nouveaux.forEach((b, i) => setTimeout(() => VI.toast(`<span class="toast-icone">${b.icone}</span> Nouveau badge : <b>${esc(b.nom)}</b>`, 'trophee'), 400 + i * 900));
   }
 
   $('#btn-res-accueil').addEventListener('click', afficherAccueil);
@@ -557,39 +945,57 @@
   /* ---------------- Envoi et file d'attente hors-ligne ---------------- */
   let envoiEnCours = false;
   function envoyer(donnees) {
-    if (!VI.urlConfiguree()) { majSync(); return; }
-    const file = VI.store.get('vi:file', []);
-    file.push(donnees);
+    if (LOCAL) { majSync(); return; }
+    const file = VI.store.get('vi:file', []).filter((x) => x && x.data);   // ignore le format des versions précédentes
+    file.push({ code: eleve.code, data: donnees });
     VI.store.set('vi:file', file.slice(-300));
     viderFile();
   }
+  let avertiSession = false;
   async function viderFile() {
-    if (!VI.urlConfiguree() || envoiEnCours) { majSync(); return; }
-    let file = VI.store.get('vi:file', []);
-    if (!file.length) { majSync(); return; }
-    if (!navigator.onLine) { majSync(); return; }
+    if (LOCAL || envoiEnCours || !navigator.onLine) { majSync(); return; }
+    let file = VI.store.get('vi:file', []).filter((x) => x && x.data);
     envoiEnCours = true; majSync(true);
     try {
       while (file.length) {
+        const item = file[0];
+        const tk = jeton(item.code);
+        if (!tk) break;                              // l'élève devra se reconnecter
         try {
-          await VI.api('submit', { data: file[0] });
+          await VI.api('submit', { code: item.code, token: tk, data: item.data });
           file.shift();
         } catch (e) {
-          if (!e.serveur) throw e;                 // réseau : on réessaiera plus tard
-          file[0]._essais = (file[0]._essais || 0) + 1;
-          if (file[0]._essais >= 5) file.shift();  // refusé 5 fois : on abandonne cet envoi
-          else throw e;
+          if (!e.serveur) throw e;                   // réseau : on réessaiera plus tard
+          if (/Session élève expirée/.test(e.message)) {
+            VI.store.del('vi:jeton:' + item.code);
+            if (!avertiSession) { avertiSession = true; VI.toast('🔒 Reconnecte-toi avec ton NIP pour envoyer tes résultats.', 'erreur'); }
+            break;
+          }
+          item._essais = (item._essais || 0) + 1;
+          if (item._essais >= 5) file.shift(); else throw e;
         } finally { VI.store.set('vi:file', file); }
       }
+      await pousserProgression();
     } catch (e) { /* on réessaiera */ }
     finally { envoiEnCours = false; majSync(); }
   }
+  // Sauvegarde la progression de l'élève connecté dans la feuille Google
+  async function pousserProgression() {
+    if (LOCAL || !eleve || !VI.store.get('vi:sale:' + eleve.code, false)) return;
+    const tk = jeton(eleve.code); if (!tk) return;
+    try {
+      await VI.api('saveProgress', { code: eleve.code, token: tk, progression: profil });
+      VI.store.del('vi:sale:' + eleve.code);
+    } catch (e) {
+      if (e.serveur && /Session élève expirée/.test(e.message)) VI.store.del('vi:jeton:' + eleve.code);
+    }
+  }
   function majSync(enCours) {
     const el = $('#sync');
-    if (!VI.urlConfiguree()) { el.textContent = '📴 Local'; el.title = 'Mode local : la progression reste sur cet appareil (aucune URL de script configurée).'; return; }
-    const n = VI.store.get('vi:file', []).length;
+    if (LOCAL) { el.textContent = '📴 Local'; el.title = 'Mode local : la progression reste sur cet appareil (aucune URL de script configurée).'; return; }
+    const n = VI.store.get('vi:file', []).filter((x) => x && x.data).length;
     if (enCours) { el.textContent = '⏳ Envoi…'; el.title = 'Envoi des résultats en cours'; }
-    else if (n) { el.textContent = '⏳ ' + n + ' en attente'; el.title = 'Hors-ligne : les résultats seront envoyés automatiquement au retour du réseau.'; }
+    else if (n) { el.textContent = '⏳ ' + n + ' en attente'; el.title = 'Les résultats seront envoyés automatiquement (réseau ou reconnexion requis).'; }
     else { el.textContent = '☁️ À jour'; el.title = 'Tous les résultats sont envoyés.'; }
   }
   window.addEventListener('online', viderFile);
@@ -597,13 +1003,14 @@
 
   /* ---------------- Démarrage ---------------- */
   VI.initApparence($('#btn-theme'), $('#btn-lecture'));
-  const dernier = VI.store.get('vi:dernier', null);
-  if (dernier) connecter(dernier); else afficherConnexion();
+  VI.store.del('vi:dernier'); // ancienne reconnexion automatique (remplacée par le NIP)
+  const enCours = lireSessionOnglet();   // même onglet déjà connecté (ex. page actualisée)
+  if (enCours && RX_CODE.test(enCours) && (LOCAL || jeton(enCours) || VI.store.get('vi:nip:' + enCours, null))) reussirConnexion(enCours, null, null);
+  else afficherConnexion();
   majSync();
   viderFile();
-  VI.rafraichirVerbes().then((change) => {
-    if (!change) return;
-    VERBES = VI.verbesLocaux();
-    if (!session && eleve && !$('#ecran-accueil').hidden) afficherAccueil();
-  });
+  chargerEcoles().then(() => { if (eleve) eleve.nomEcole = nomEcole(eleve.ecole); });
+  const rafraichirAccueil = () => { if (!session && eleve && !$('#ecran-accueil').hidden) afficherAccueil(); };
+  VI.rafraichirVerbes().then((change) => { if (change) { VERBES = VI.verbesLocaux(); rafraichirAccueil(); } });
+  VI.rafraichirPhrases().then((change) => { if (change) { PHRASES = VI.phrasesLocales(); rafraichirAccueil(); } });
 })();

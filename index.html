@@ -37,22 +37,40 @@
     <section class="ecran" id="ecran-connexion" hidden>
       <div class="carte carte-connexion">
         <h1>Salut ! 👋</h1>
-        <p class="muted">Entre ton numéro de groupe et tes initiales. Tu dois utiliser <b>toujours le même code</b> pour retrouver ta progression.</p>
+        <p class="muted">Choisis ton école, puis entre ton numéro de groupe et tes initiales. Utilise <b>toujours le même code</b> : ta progression te suit sur tous les appareils.</p>
         <form id="form-connexion" autocomplete="off" novalidate>
-          <div class="rangee-code">
-            <label class="champ">
-              <span>Groupe</span>
-              <input id="in-groupe" inputmode="numeric" maxlength="4" placeholder="21" required aria-describedby="aide-code">
+          <div id="etape-code">
+            <label class="champ" id="champ-ecole" style="margin-top:1rem">
+              <span>École</span>
+              <select id="in-ecole" aria-describedby="aide-code"><option value="">— Choisis ton école —</option></select>
             </label>
-            <span class="tiret" aria-hidden="true">–</span>
-            <label class="champ">
-              <span>Initiales</span>
-              <input id="in-initiales" maxlength="5" placeholder="AB" autocapitalize="characters" required aria-describedby="aide-code">
-            </label>
+            <div class="rangee-code">
+              <label class="champ">
+                <span>Groupe</span>
+                <input id="in-groupe" inputmode="numeric" maxlength="4" placeholder="21" aria-describedby="aide-code">
+              </label>
+              <span class="tiret" aria-hidden="true">–</span>
+              <label class="champ">
+                <span>Initiales</span>
+                <input id="in-initiales" maxlength="5" placeholder="AB" autocapitalize="characters" aria-describedby="aide-code">
+              </label>
+            </div>
+            <p class="aide" id="aide-code">Ton code : <b id="apercu-code">—</b>. Si un ou une élève de ton groupe a les mêmes initiales, ajoute un chiffre (ex. AB2).</p>
+            <button class="btn btn-principal btn-large" type="submit" id="btn-continuer">Continuer →</button>
           </div>
-          <p class="aide" id="aide-code">Ton code : <b id="apercu-code">—</b>. Si un ou une élève de ton groupe a les mêmes initiales, ajoute un chiffre (ex. AB2).</p>
+          <div id="etape-nip" hidden>
+            <p id="nip-titre" class="nip-titre"></p>
+            <label class="champ"><span>NIP (4 chiffres)</span>
+              <input id="in-nip" class="nip-input" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password"></label>
+            <label class="champ" id="champ-nip2" style="margin-top:.6rem"><span>Confirme ton NIP</span>
+              <input id="in-nip2" class="nip-input" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password"></label>
+            <button class="btn btn-principal btn-large" type="submit" id="btn-entrer" style="margin-top:1rem">Entrer</button>
+            <div class="actions" style="justify-content:space-between">
+              <button type="button" class="btn btn-fantome btn-petit" id="btn-retour-code">← Ce n'est pas moi</button>
+              <button type="button" class="btn btn-fantome btn-petit" id="btn-nip-oublie">NIP oublié ?</button>
+            </div>
+          </div>
           <p class="erreur" id="erreur-connexion" role="alert"></p>
-          <button class="btn btn-principal btn-large" type="submit">C'est parti →</button>
         </form>
         <div id="anciens-codes" class="anciens-codes"></div>
       </div>
@@ -120,8 +138,8 @@
 
       <form class="carte carte-question" id="form-question" autocomplete="off" novalidate>
         <div class="question-tete">
-          <span class="etiquette" id="etiquette-mode"></span>
-          <span class="serie-live" id="serie-live" aria-live="polite"></span>
+          <span class="etiquette" id="etiquette-mode" data-etiquette></span>
+          <span class="serie-live" id="serie-live" aria-live="polite" data-serie></span>
         </div>
         <p class="donnee-label" id="donnee-label"></p>
         <div class="donnee">
@@ -139,6 +157,45 @@
           <button type="submit" class="btn btn-principal" id="btn-valider">Vérifier <kbd>Entrée</kbd></button>
         </div>
       </form>
+
+      <!-- Phrases à compléter -->
+      <form class="carte carte-question" id="form-phrase" autocomplete="off" novalidate hidden>
+        <div class="question-tete"><span class="etiquette" data-etiquette></span><span class="serie-live" aria-live="polite" data-serie></span></div>
+        <p class="donnee-label">Mets le verbe entre parenthèses au bon temps</p>
+        <p class="phrase-texte" id="phrase-texte" lang="en"></p>
+        <p class="indice-desamb" id="phrase-indice" aria-live="polite"></p>
+        <div class="retro" id="retro-phrase" aria-live="polite"></div>
+        <div class="actions-question">
+          <button type="button" class="btn btn-secondaire" id="btn-indice-phrase">💡 Indice <small>(−50 %)</small></button>
+          <button type="submit" class="btn btn-principal" id="btn-valider-phrase">Vérifier <kbd>Entrée</kbd></button>
+        </div>
+      </form>
+
+      <!-- Chasse aux erreurs -->
+      <form class="carte carte-question carte-large" id="form-chasse" autocomplete="off" novalidate hidden>
+        <div class="question-tete"><span class="etiquette" data-etiquette></span><span class="serie-live" aria-live="polite" data-serie></span></div>
+        <p class="donnee-label">Clique sur chaque verbe mal conjugué, puis écris la bonne forme</p>
+        <p class="aide" style="margin-top:0">Attention : certains verbes sont corrects. Il y a 2 ou 3 erreurs par manche.</p>
+        <ol class="liste-chasse" id="liste-chasse"></ol>
+        <div class="retro" id="retro-chasse" aria-live="polite"></div>
+        <div class="actions-question">
+          <button type="submit" class="btn btn-principal" id="btn-valider-chasse">Vérifier <kbd>Entrée</kbd></button>
+        </div>
+      </form>
+
+      <!-- Vrai ou faux éclair -->
+      <div class="carte carte-question carte-vf" id="carte-vf" hidden>
+        <div class="question-tete"><span class="etiquette" data-etiquette></span><span class="serie-live" aria-live="polite" data-serie></span></div>
+        <p class="donnee-label">Ce trio est-il correct ?</p>
+        <div class="vf-trio mono" id="vf-trio" lang="en" aria-live="polite"></div>
+        <p class="muted vf-fr" id="vf-fr"></p>
+        <p class="vf-correction" id="vf-correction" aria-live="polite"></p>
+        <div class="vf-boutons">
+          <button type="button" class="btn btn-vf faux" id="btn-faux">✗ Faux <kbd>←</kbd></button>
+          <button type="button" class="btn btn-vf vrai" id="btn-vrai">✓ Vrai <kbd>→</kbd></button>
+        </div>
+        <p class="aide" style="text-align:center">Sur cellulaire ou tablette, tu peux aussi glisser la carte : à droite = vrai, à gauche = faux.</p>
+      </div>
     </section>
 
     <!-- =============== RÉSULTATS =============== -->
@@ -166,6 +223,7 @@
 
   <script src="js/config.js"></script>
   <script src="js/verbes-defaut.js"></script>
+  <script src="js/phrases-defaut.js"></script>
   <script src="js/commun.js"></script>
   <script src="js/app.js"></script>
 </body>
