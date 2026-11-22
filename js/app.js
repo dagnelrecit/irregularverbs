@@ -45,7 +45,24 @@
   const boite = (v) => (profil.boites[VI.cle(v)] || { b: 0, vu: 0 }).b;
   const niveau = () => Math.floor(Math.sqrt(profil.xp / 40)) + 1;
   const verbesDuBloc = (b) => VERBES.filter((v) => v.bloc === b);
-  const maitrise = (b) => { const l = verbesDuBloc(b); return { total: l.length, ok: l.filter((v) => boite(v) >= 4).length }; };
+  // État d'un bloc : maîtrisés (niveau 4+), en bonne voie (2-3), à revoir (raté la dernière fois), pas encore vus
+  const maitrise = (b) => {
+    const l = verbesDuBloc(b);
+    const etat = { total: l.length, ok: 0, voie: 0, revoir: 0, nouveaux: 0 };
+    l.forEach((v) => {
+      const st = profil.boites[VI.cle(v)];
+      const n = st ? st.b : 0;
+      if (n >= 4) etat.ok++; else if (n >= 2) etat.voie++; else if (st && st.vu > 0) etat.revoir++; else etat.nouveaux++;
+    });
+    return etat;
+  };
+  const pluriel = (n, mot) => n + ' ' + mot + (n > 1 ? 's' : '');
+  // Barre en trois segments : maîtrisés · en bonne voie · à revoir
+  const barreEtat = (m) => {
+    const w = (n) => (m.total ? (n / m.total) * 100 : 0).toFixed(1) + '%';
+    return `<span class="jauge jauge-etat" role="img" aria-label="${m.ok} maîtrisés, ${m.voie} en bonne voie, ${m.revoir} à revoir sur ${m.total}">
+      <span class="seg-ok" style="width:${w(m.ok)}"></span><span class="seg-voie" style="width:${w(m.voie)}"></span><span class="seg-revoir" style="width:${w(m.revoir)}"></span></span>`;
+  };
   const difficilesDuBloc = (b) => verbesDuBloc(b).filter((v) => { const s = profil.boites[VI.cle(v)]; return s && s.vu > 0 && s.b <= 1; }); // raté (ou réussi avec indice) la dernière fois
 
   function serieJours() {
@@ -146,22 +163,22 @@
   function afficherAccueil() {
     majEntete();
     const totalM = [1, 2, 3, 4].reduce((s, b) => s + maitrise(b).ok, 0);
+    const totalV = [1, 2, 3, 4].reduce((s, b) => s + maitrise(b).voie, 0);
     $('#titre-accueil').textContent = 'Salut ' + eleve.code + ' !';
     const sj = serieJours();
     $('#message-accueil').textContent = !profil.historique.length
       ? 'Commence par « Étudier » pour découvrir les familles de verbes, puis teste-toi.'
-      : totalM === 0 ? 'Un verbe est « maîtrisé » après 3 bonnes réponses sans indice, à des moments différents. Continue !'
-      : `Tu maîtrises ${totalM} verbe${totalM > 1 ? 's' : ''} sur ${VERBES.length}.` + (sj > 1 ? ` ${sj} jours de suite, continue !` : ' Un peu chaque jour, c\'est la clé.');
+      : totalM === 0 ? `${pluriel(totalV, 'verbe')} en bonne voie ! Un verbe devient « maîtrisé » après 3 bonnes réponses sans indice.`
+      : `Tu maîtrises ${pluriel(totalM, 'verbe')} sur ${VERBES.length}` + (totalV ? ` et ${totalV} ${totalV > 1 ? 'sont' : 'est'} en bonne voie.` : '.') + (sj > 1 ? ` ${sj} jours de suite, continue !` : ' Un peu chaque jour, c\'est la clé.');
 
     // Blocs
     $('#grille-blocs').innerHTML = [1, 2, 3, 4].map((b) => {
       const m = maitrise(b);
-      const pct = m.total ? Math.round((m.ok / m.total) * 100) : 0;
       return `<button class="bloc b${b}" role="radio" aria-checked="${choix.bloc === b}" data-bloc="${b}" ${m.total ? '' : 'disabled'}>
         <span class="bloc-nom">Bloc ${b}</span>
         <span class="bloc-info">${m.total} verbes</span>
-        <span class="jauge"><span style="width:${pct}%"></span></span>
-        <span class="bloc-info">${m.ok} maîtrisé${m.ok > 1 ? 's' : ''} · ${pct} %</span>
+        ${barreEtat(m)}
+        <span class="bloc-info"><b class="c-ok">${m.ok}</b> maîtrisé${m.ok > 1 ? 's' : ''} · <b class="c-voie">${m.voie}</b> en bonne voie</span>
       </button>`;
     }).join('');
 
@@ -492,7 +509,8 @@
     });
 
     // Affichage
-    const mApres = maitrise(s.bloc).ok;
+    const etatApres = maitrise(s.bloc);
+    const mApres = etatApres.ok;
     const gain = mApres - s.maitriseAvant;
     $('#anneau').style.setProperty('--pct', pct);
     $('#res-pct').textContent = s.mode === 'sprint' ? s.points : pct + ' %';
@@ -500,9 +518,16 @@
     $('#res-titre').textContent = s.mode === 'sprint'
       ? (record ? 'Nouveau record ! 🏆' : s.points + ' verbe' + (s.points > 1 ? 's' : '') + ' en ' + CONFIG.dureeSprintSecondes + ' s')
       : pct >= 90 ? 'Excellent travail ! 🌟' : pct >= 75 ? 'Très bien ! 👏' : pct >= 50 ? 'Beau progrès ! 💪' : 'Chaque essai te fait progresser 🌱';
-    $('#res-message').textContent = (gain > 0 ? `+${gain} verbe${gain > 1 ? 's' : ''} maîtrisé${gain > 1 ? 's' : ''} ! ` : '') +
-      `Bloc ${s.bloc} : ${mApres} / ${verbesDuBloc(s.bloc).length} verbes maîtrisés.` +
-      (rates.length ? ' Les verbes ratés reviendront plus souvent, c\'est voulu.' : '');
+    const E = etatApres;
+    $('#res-message').innerHTML = (gain > 0 ? `<b>+${pluriel(gain, 'verbe')} maîtrisé${gain > 1 ? 's' : ''} ! 🎉</b><br>` : '') +
+      `<span class="etat-titre">Bloc ${s.bloc} : ta progression</span>${barreEtat(E)}
+      <span class="legende-etat">
+        <span><i class="pt seg-ok"></i><b>${E.ok}</b> maîtrisé${E.ok > 1 ? 's' : ''}</span>
+        <span><i class="pt seg-voie"></i><b>${E.voie}</b> en bonne voie</span>
+        <span><i class="pt seg-revoir"></i><b>${E.revoir}</b> à revoir</span>
+        ${E.nouveaux ? `<span><i class="pt seg-nouveau"></i><b>${E.nouveaux}</b> pas encore vu${E.nouveaux > 1 ? 's' : ''}</span>` : ''}
+      </span>
+      <span class="aide-etat">Un verbe devient « maîtrisé » après 3 bonnes réponses sans indice.${rates.length ? ' Les verbes ratés reviendront plus souvent, c\'est voulu.' : ''}</span>`;
     const min = Math.floor(duree / 60), sec = duree % 60;
     $('#res-stats').innerHTML = [
       ['Bonnes réponses', s.resultats.filter((r) => r.tout).length + ' / ' + s.resultats.length],
