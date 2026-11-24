@@ -1,6 +1,6 @@
 /**
  * ============================================================
- *  IrregularVerbs — Base de données Google Sheets (version 3 : écoles, NIP élèves, progression)
+ *  IrregularVerbs — Base de données Google Sheets (version 4 : inscription des enseignants)
  *  À coller dans : Extensions > Apps Script (depuis ta feuille Google)
  * ============================================================
  *  Première installation :
@@ -17,8 +17,10 @@
  * ============================================================
  *  Rôles
  *  - Administrateur (identifiant « admin ») : voit et gère tout.
- *  - Enseignant (compte créé par l'administrateur) : crée ses groupes,
- *    voit et supprime uniquement les données de ses groupes.
+ *  - Enseignant : compte créé par l'administrateur, OU demandé par
+ *    l'enseignant lui-même sur le site (« Créer un compte »). Une demande
+ *    reste « En attente » jusqu'à ce que l'administrateur l'active.
+ *    Crée ses groupes, voit et supprime uniquement les données de ses groupes.
  *  - Élève : école + groupe + initiales + NIP personnel (4 chiffres).
  *    Sa progression est sauvegardée ici et le suit sur tous ses appareils.
  *  Le tri des données se fait ICI, côté serveur : un enseignant ne reçoit
@@ -35,7 +37,9 @@ const F_ELEVES = 'Élèves';
 const F_PHRASES = 'Phrases';
 const E_RES = ['Date', 'Code', 'Groupe', 'Bloc', 'Activité', 'Score', 'Maximum', 'Pourcentage', 'Durée (s)', 'Questions', 'Réussis', 'Ratés', 'ID'];
 const E_VERBES = ['Bloc', 'Infinitif', 'Passé', 'Participe passé', 'Français'];
-const E_ENS = ['Identifiant', 'Nom', 'Empreinte du NIP (ne pas modifier)', 'Sel (ne pas modifier)', 'Actif', 'Créé le'];
+const E_ENS = ['Identifiant', 'Nom', 'Empreinte du NIP (ne pas modifier)', 'Sel (ne pas modifier)', 'Actif', 'Créé le', 'En attente', 'Courriel'];
+const MAX_ATTENTE = 30;          // demandes de compte en attente au maximum
+const MAX_INSCRIPTIONS_HEURE = 10; // demandes de compte par heure au maximum (anti-pourriel)
 const E_GRP = ['Groupe (ÉCOLE-numéro)', 'Enseignant (identifiant)', 'Créé le'];
 const E_ECOLES = ['ID (ne pas modifier)', 'Nom', 'Active', 'Créée le'];
 const E_ELEVES = ['Code', 'Empreinte du NIP (ne pas modifier)', 'Sel (ne pas modifier)', 'Jetons (ne pas modifier)', 'Progression (ne pas modifier)', 'Mise à jour', 'Créé le'];
@@ -101,7 +105,7 @@ function traiter_(req) {
   try {
     // ---- Actions publiques (élèves)
     switch (req.action) {
-      case 'ping':            return { ok: true, message: 'Le script fonctionne.', version: 3 };
+      case 'ping':            return { ok: true, message: 'Le script fonctionne.', version: 4 };
       case 'getVerbs':        return { ok: true, verbes: lireVerbes_() };
       case 'getPhrases':      return { ok: true, phrases: lirePhrases_() };
       case 'getSchools':      return { ok: true, ecoles: lireEcoles_().filter(function (e) { return e.actif; }).map(function (e) { return { id: e.id, nom: e.nom }; }) };
@@ -111,6 +115,8 @@ function traiter_(req) {
       case 'submit':          jetonEleve_(req.code, req.token); return enregistrerResultat_(req.data || {}, req.code);
       case 'saveProgress':    return sauverProgression_(jetonEleve_(req.code, req.token), req.progression);
       case 'login':           return connexion_(req.identifiant, req.pin);
+      case 'signupStatus':    return { ok: true, ouvertes: inscriptionsOuvertes_() };
+      case 'teacherSignup':   return inscrireEnseignant_(req);
     }
     // ---- Actions qui exigent une session
     const s = session_(req.token);
@@ -133,6 +139,7 @@ function traiter_(req) {
       case 'listTeachers':  return { ok: true, enseignants: listeEnseignants_() };
       case 'saveTeacher':   return sauverEnseignant_(req);
       case 'deleteTeacher': return supprimerEnseignant_(req.identifiant);
+      case 'setSignup':     PropertiesService.getScriptProperties().setProperty('INSCRIPTIONS', req.ouvertes ? 'ouvertes' : 'fermees'); return { ok: true, ouvertes: inscriptionsOuvertes_() };
       case 'saveSchool':    return sauverEcole_(req);
       case 'deleteSchool':  return supprimerEcole_(req.id);
       case 'savePhrases':   return sauverPhrases_(req.phrases);
@@ -172,7 +179,11 @@ function connexion_(identifiant, nip) {
     if (hacher_((p.getProperty('NIP_SEL') || '') + String(nip || '')) === hash) session = { id: ADMIN, role: 'admin', nom: 'Administrateur' };
   } else {
     const e = trouverEnseignant_(id);
-    if (e && e.actif && hacher_(e.sel + String(nip || '')) === e.hash) session = { id: e.identifiant, role: 'enseignant', nom: e.nom };
+    if (e && e.hash && hacher_(e.sel + String(nip || '')) === e.hash) {
+      if (e.attente) { cache.remove(cleEchecs); throw new Error('Ton compte est en attente d\'activation par l\'administrateur. Réessaie quand il t\'aura confirmé l\'activation.'); }
+      if (!e.actif) { cache.remove(cleEchecs); throw new Error('Ce compte est désactivé. Contacte l\'administrateur.'); }
+      session = { id: e.identifiant, role: 'enseignant', nom: e.nom };
+    }
   }
   if (!session) {
     cache.put(cleEchecs, String(echecs + 1), 300);
@@ -211,6 +222,10 @@ function feuille_(nom, entetes) {
   let f = ss.getSheetByName(nom);
   if (!f) f = ss.insertSheet(nom);
   if (f.getLastRow() === 0) f.appendRow(entetes);
+  else if (f.getLastColumn() < entetes.length) { // nouvelles colonnes ajoutées par une mise à jour
+    const n = f.getLastColumn();
+    f.getRange(1, n + 1, 1, entetes.length - n).setValues([entetes.slice(n)]).setFontWeight('bold').setBackground('#ebeaff');
+  }
   return f;
 }
 function valeurs_(f, nbCol) {
@@ -225,9 +240,10 @@ function verrou_(fn) {
 
 /* ================= Enseignants ================= */
 function lireEnseignants_() {
-  return valeurs_(feuille_(F_ENS, E_ENS), 6).filter(function (r) { return r[0]; }).map(function (r, i) {
+  const vrai = function (x) { return x === true || String(x).toUpperCase() === 'TRUE' || String(x).toLowerCase() === 'oui'; };
+  return valeurs_(feuille_(F_ENS, E_ENS), 8).filter(function (r) { return r[0]; }).map(function (r, i) {
     return { ligne: i + 2, identifiant: String(r[0]).trim().toLowerCase(), nom: String(r[1]), hash: String(r[2]), sel: String(r[3]),
-             actif: r[4] === true || String(r[4]).toUpperCase() === 'TRUE' || String(r[4]).toLowerCase() === 'oui' };
+             actif: vrai(r[4]), cree: r[5] instanceof Date ? r[5].toISOString() : '', attente: vrai(r[6]), courriel: String(r[7] || '').trim() };
   });
 }
 function trouverEnseignant_(id) {
@@ -237,7 +253,7 @@ function trouverEnseignant_(id) {
 function listeEnseignants_() {
   const groupes = listeGroupes_();
   return lireEnseignants_().map(function (e) {
-    return { identifiant: e.identifiant, nom: e.nom, actif: e.actif,
+    return { identifiant: e.identifiant, nom: e.nom, actif: e.actif, attente: e.attente, courriel: e.courriel, cree: e.cree,
              groupes: groupes.filter(function (g) { return g.enseignant === e.identifiant; }).map(function (g) { return g.groupe; }) };
   });
 }
@@ -260,12 +276,15 @@ function sauverEnseignant_(req) {
       if (!nom) throw new Error('Entre le nom de l\'enseignant.');
       if (!nipValide_(req.pin)) throw new Error('Le NIP doit contenir de 4 à 8 chiffres.');
       const sel = Utilities.getUuid();
-      f.appendRow([id, nom, hacher_(sel + String(req.pin)), sel, true, new Date()]);
+      f.appendRow([id, nom, hacher_(sel + String(req.pin)), sel, true, new Date(), false, '']);
       return { ok: true };
     }
     if (!e) throw new Error('Enseignant introuvable.');
     if (nom) f.getRange(e.ligne, 2).setValue(nom);
-    if (typeof req.actif === 'boolean') f.getRange(e.ligne, 5).setValue(req.actif);
+    if (typeof req.actif === 'boolean') {
+      f.getRange(e.ligne, 5).setValue(req.actif);
+      if (req.actif) f.getRange(e.ligne, 7).setValue(false); // activer = accepter la demande
+    }
     if (req.pin) { if (!nipValide_(req.pin)) throw new Error('Le NIP doit contenir de 4 à 8 chiffres.'); definirNipEnseignant_(id, String(req.pin)); }
     return { ok: true };
   });
@@ -277,6 +296,34 @@ function supprimerEnseignant_(id) {
     if (!e) throw new Error('Enseignant introuvable.');
     if (listeGroupes_().some(function (g) { return g.enseignant === id; })) throw new Error('Cet enseignant a encore des groupes : réattribue-les ou supprime-les d\'abord.');
     feuille_(F_ENS, E_ENS).deleteRow(e.ligne);
+    return { ok: true };
+  });
+}
+
+/* ================= Inscription d'un enseignant (demande de compte) ================= */
+function inscriptionsOuvertes_() { return PropertiesService.getScriptProperties().getProperty('INSCRIPTIONS') !== 'fermees'; }
+
+function inscrireEnseignant_(req) {
+  if (!inscriptionsOuvertes_()) throw new Error('Les inscriptions sont fermées pour le moment. Contacte l\'administrateur.');
+  if (req.site) return { ok: true }; // champ piège invisible rempli : robot, on ignore sans rien dire
+  const id = String(req.identifiant || '').trim().toLowerCase();
+  const nom = String(req.nom || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+  const courriel = String(req.courriel || '').trim().toLowerCase().slice(0, 100);
+  if (nom.length < 3) throw new Error('Entre ton prénom et ton nom.');
+  if (!/^[a-z0-9._-]{2,20}$/.test(id)) throw new Error('Identifiant : 2 à 20 caractères (lettres minuscules, chiffres, point, tiret).');
+  if (id === ADMIN) throw new Error('L\'identifiant « admin » est réservé.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(courriel)) throw new Error('Entre ton adresse courriel scolaire (l\'administrateur s\'en sert pour te reconnaître).');
+  if (!nipValide_(req.pin)) throw new Error('Le NIP doit contenir de 4 à 8 chiffres.');
+  const cache = CacheService.getScriptCache();
+  const recentes = Number(cache.get('inscriptions_heure') || 0);
+  if (recentes >= MAX_INSCRIPTIONS_HEURE) throw new Error('Trop de demandes de compte en peu de temps. Réessaie dans une heure.');
+  return verrou_(function () {
+    const tous = lireEnseignants_();
+    if (tous.some(function (e) { return e.identifiant === id; })) throw new Error('Cet identifiant est déjà pris. Choisis-en un autre (ex. ajoute un chiffre).');
+    if (tous.filter(function (e) { return e.attente; }).length >= MAX_ATTENTE) throw new Error('Trop de demandes sont déjà en attente. Contacte l\'administrateur.');
+    const sel = Utilities.getUuid();
+    feuille_(F_ENS, E_ENS).appendRow([id, nom, hacher_(sel + String(req.pin)), sel, false, new Date(), true, courriel]);
+    cache.put('inscriptions_heure', String(recentes + 1), 3600);
     return { ok: true };
   });
 }
@@ -323,7 +370,7 @@ function groupesPour_(s) {
     const connus = {};
     groupes.forEach(function (g) { connus[g.groupe] = true; });
     rep.orphelins = Object.keys(compte).filter(function (g) { return !connus[g]; }).map(function (g) { return { groupe: g, resultats: compte[g] }; });
-    rep.enseignants = lireEnseignants_().map(function (e) { return { identifiant: e.identifiant, nom: e.nom, actif: e.actif }; });
+    rep.enseignants = lireEnseignants_().filter(function (e) { return !e.attente; }).map(function (e) { return { identifiant: e.identifiant, nom: e.nom, actif: e.actif }; });
   }
   return rep;
 }

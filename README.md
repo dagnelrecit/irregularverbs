@@ -21,6 +21,51 @@ apps-script/Code.gs   ← code à coller dans Google Apps Script
 
 ---
 
+## 🆕 Mise à jour vers la version 4 : les enseignants créent leur compte
+
+**Nouveauté :** sur la page de connexion de l'espace enseignant, un lien **« Créer un compte »** permet à un enseignant d'entrer son nom, son courriel scolaire, un identifiant et **le NIP de son choix**. Le compte reste **en attente** : l'enseignant ne peut pas se connecter tant que l'administrateur ne l'a pas activé.
+
+Tes données actuelles (résultats, groupes, élèves, comptes enseignants) sont **conservées**. La feuille « Enseignants » reçoit simplement deux colonnes de plus (« En attente » et « Courriel »), ajoutées automatiquement.
+
+### A. Mettre à jour le script Google (5 minutes)
+1. Ouvre ta feuille Google, puis **Extensions › Apps Script**.
+2. Sélectionne tout le contenu de `Code.gs` (Ctrl + A), efface-le, puis colle **tout** le nouveau fichier `apps-script/Code.gs`. Clique 💾 **Enregistrer**.
+3. **Déployer › Gérer les déploiements** › clique sur ✏️ (crayon) › **Version : Nouvelle version** › **Déployer**.
+   ⚠️ N'utilise **pas** « Nouveau déploiement » : l'URL changerait et il faudrait modifier `js/config.js`.
+4. Vérifie : colle ton URL suivie de `?action=ping` dans le navigateur. Tu dois voir `"version":4`.
+
+> Aucune nouvelle autorisation Google n'est demandée : le script utilise les mêmes services qu'avant.
+
+### B. Mettre à jour le site sur GitHub (5 minutes)
+1. Dans ton dépôt GitHub, clique sur **Add file › Upload files**.
+2. Glisse ces 4 fichiers **en respectant leur dossier** (le plus simple : glisser les dossiers `js` et `css` au complet, avec `enseignant.html` et `sw.js`) :
+   - `enseignant.html`
+   - `js/enseignant.js`
+   - `css/styles.css`
+   - `sw.js` (sa `VERSION` passe à `iv-v7`, ce qui force les appareils à charger la nouvelle version)
+3. **Commit changes**. Attends 1 ou 2 minutes, puis recharge l'espace enseignant (Ctrl + Maj + R).
+
+> Ne remplace **pas** `js/config.js` si ton URL y est déjà : la version de l'archive contient `VOTRE_URL_ICI`.
+
+### C. Tester (2 minutes)
+1. Dans une fenêtre de navigation privée, ouvre `…/enseignant.html` › **Créer un compte** › remplis le formulaire avec un compte test.
+2. Essaie de te connecter avec ce compte : le message « Ton compte est en attente d'activation » doit apparaître.
+3. Connecte-toi avec `admin` › onglet **🧑‍🏫 Enseignants** (une pastille rouge indique le nombre de demandes) › **✅ Activer**.
+4. Reconnecte-toi avec le compte test : ça fonctionne. Supprime-le ensuite s'il ne sert plus.
+
+### Ce que voit l'administrateur
+- Dans l'onglet **🧑‍🏫 Enseignants**, l'encadré **⏳ Demandes de compte en attente** montre le nom, le courriel, l'identifiant et la date de chaque demande, avec **✅ Activer** ou **Refuser** (refuser supprime la demande, après confirmation).
+- L'enseignant n'est pas avisé automatiquement : écris-lui (le courriel est cliquable) pour lui dire que son compte est actif.
+- La case **🚪 Inscription en ligne** ouvre ou ferme les demandes. Fermée, le lien « Créer un compte » disparaît et seul l'administrateur peut ajouter des comptes (comme avant).
+- Tu peux aussi activer un compte directement dans la feuille : onglet « Enseignants », mets `TRUE` dans « Actif » et `FALSE` dans « En attente ».
+
+### Protections intégrées
+- Le NIP choisi est haché dès sa réception (jamais lisible, même par l'administrateur).
+- Un compte en attente ou désactivé ne peut pas se connecter. Le message « en attente » ne s'affiche qu'avec le bon NIP, ce qui ne révèle pas quels identifiants existent.
+- Anti-pourriel : 10 demandes par heure au maximum, 30 demandes en attente au maximum, et un champ piège invisible qui bloque les robots.
+
+---
+
 ## Étape 1 — Créer la base de données (Google Sheets), environ 10 minutes
 
 1. Va sur <https://sheets.google.com> et crée une **feuille vide**. Nomme-la par exemple « Verbes irréguliers — résultats ».
@@ -90,14 +135,16 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 |---|---|---|
 | Résultats visibles | tous les groupes | **ses groupes seulement** |
 | Créer / supprimer des groupes | tous | les siens |
-| Comptes enseignants (ajouter, désactiver, nouveau NIP) | ✅ | ❌ |
+| Comptes enseignants (ajouter, activer les demandes, désactiver, nouveau NIP) | ✅ | ❌ |
+| Demander un compte (lien « Créer un compte ») | — | ✅ |
 | Réattribuer un groupe, gérer les résultats « orphelins » | ✅ | ❌ |
 | Gérer les écoles (ajouter, renommer, désactiver) | ✅ | ❌ |
 | Réinitialiser le NIP d'un élève | tous | ses élèves |
 | Listes de verbes (communes à tous) | ✅ | ❌ |
 | Export CSV, changer son NIP | ✅ | ✅ |
 
-- L'administrateur crée les comptes dans l'onglet **🧑‍🏫 Enseignants** (nom, identifiant, NIP de départ) et transmet l'identifiant et le NIP.
+- Un enseignant peut **demander son compte** sur la page de connexion (« Créer un compte ») en choisissant son NIP. L'administrateur l'active dans l'onglet **🧑‍🏫 Enseignants**.
+- L'administrateur peut aussi créer un compte lui-même dans ce même onglet (nom, identifiant, NIP de départ) et transmettre l'identifiant et le NIP.
 - L'administrateur crée les **écoles** dans l'onglet **🏛️ Écoles** : un nom visible par les élèves et un code court (ex. `SJ`) qui ne change plus.
 - Chaque enseignant crée ses groupes dans **🏫 Mes groupes** en choisissant l'école. Dans une même école, un numéro n'appartient qu'à un seul enseignant, mais deux écoles peuvent chacune avoir un groupe 21.
 - Un élève qui entre un groupe qui n'existe pas est bloqué avec un message. Si personne n'a encore créé de groupe, tous les groupes sont acceptés.
@@ -128,6 +175,9 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 |---|---|
 | « 📴 Local » s'affiche | L'URL n'est pas configurée dans `js/config.js`. |
 | « Aucun NIP administrateur » | Dans la feuille : menu *Verbes irréguliers › Définir ou changer le NIP administrateur*. |
+| « Ton compte est en attente d'activation » | L'administrateur doit cliquer sur **✅ Activer** dans l'onglet Enseignants. |
+| « Le script Google n'est pas encore à jour (version 4) » à l'inscription | Le site a été mis à jour, mais pas le script : refais l'étape A de la mise à jour (nouvelle version du déploiement). |
+| Le lien « Créer un compte » n'apparaît pas | Les inscriptions sont fermées : l'administrateur coche **Inscription en ligne** dans l'onglet Enseignants. |
 | Un enseignant a oublié son NIP | L'administrateur clique sur **Nouveau NIP** dans l'onglet Enseignants. |
 | L'administrateur a oublié son NIP | Dans la feuille : menu *Verbes irréguliers › Définir ou changer le NIP administrateur*. |
 | « Ce groupe n'existe pas dans cette école » | L'enseignant doit d'abord créer ce groupe dans **Mes groupes**, dans la bonne école. |
