@@ -1,6 +1,11 @@
 /**
+ * @OnlyCurrentDoc
+ * (Limite l'autorisation du script à CETTE feuille seulement : il n'a pas accès
+ *  aux autres fichiers Google du propriétaire.)
+ */
+/**
  * ============================================================
- *  IrregularVerbs — Base de données Google Sheets (version 4 : inscription des enseignants)
+ *  IrregularVerbs — Base de données Google Sheets (version 4 : sécurité renforcée)
  *  À coller dans : Extensions > Apps Script (depuis ta feuille Google)
  * ============================================================
  *  Première installation :
@@ -12,15 +17,15 @@
  *  5. Copie l'URL (…/exec) dans js/config.js du site.
  *
  *  Mise à jour depuis une version précédente (les données sont migrées) :
- *  colle ce code, enregistre, relance « 1. Préparer la feuille »,
+ *  colle ce code, enregistre, relance « 1. Préparer la feuille » (Google redemande
+ *  l'autorisation : c'est normal, elle est maintenant limitée à cette feuille),
  *  puis Déployer > Gérer les déploiements > ✏️ > Nouvelle version.
+ *  Si ton NIP administrateur a moins de 8 chiffres, change-le (menu, étape 2).
  * ============================================================
  *  Rôles
  *  - Administrateur (identifiant « admin ») : voit et gère tout.
- *  - Enseignant : compte créé par l'administrateur, OU demandé par
- *    l'enseignant lui-même sur le site (« Créer un compte »). Une demande
- *    reste « En attente » jusqu'à ce que l'administrateur l'active.
- *    Crée ses groupes, voit et supprime uniquement les données de ses groupes.
+ *  - Enseignant (compte créé par l'administrateur) : crée ses groupes,
+ *    voit et supprime uniquement les données de ses groupes.
  *  - Élève : école + groupe + initiales + NIP personnel (4 chiffres).
  *    Sa progression est sauvegardée ici et le suit sur tous ses appareils.
  *  Le tri des données se fait ICI, côté serveur : un enseignant ne reçoit
@@ -37,9 +42,7 @@ const F_ELEVES = 'Élèves';
 const F_PHRASES = 'Phrases';
 const E_RES = ['Date', 'Code', 'Groupe', 'Bloc', 'Activité', 'Score', 'Maximum', 'Pourcentage', 'Durée (s)', 'Questions', 'Réussis', 'Ratés', 'ID'];
 const E_VERBES = ['Bloc', 'Infinitif', 'Passé', 'Participe passé', 'Français'];
-const E_ENS = ['Identifiant', 'Nom', 'Empreinte du NIP (ne pas modifier)', 'Sel (ne pas modifier)', 'Actif', 'Créé le', 'En attente', 'Courriel'];
-const MAX_ATTENTE = 30;          // demandes de compte en attente au maximum
-const MAX_INSCRIPTIONS_HEURE = 10; // demandes de compte par heure au maximum (anti-pourriel)
+const E_ENS = ['Identifiant', 'Nom', 'Empreinte du NIP (ne pas modifier)', 'Sel (ne pas modifier)', 'Actif', 'Créé le'];
 const E_GRP = ['Groupe (ÉCOLE-numéro)', 'Enseignant (identifiant)', 'Créé le'];
 const E_ECOLES = ['ID (ne pas modifier)', 'Nom', 'Active', 'Créée le'];
 const E_ELEVES = ['Code', 'Empreinte du NIP (ne pas modifier)', 'Sel (ne pas modifier)', 'Jetons (ne pas modifier)', 'Progression (ne pas modifier)', 'Mise à jour', 'Créé le'];
@@ -48,9 +51,15 @@ const MODES = ['quiz', 'entrainement', 'sprint', 'difficiles', 'phrases', 'erreu
 const RX_ECOLE = /^[A-Z0-9]{2,6}$/;
 const RX_GROUPE = /^[A-Z0-9]{2,6}-\d{1,4}$/;
 const RX_CODE = /^([A-Z0-9]{2,6}-\d{1,4})-[A-Z]{2,4}\d?$/;
-const DUREE_JETON_ELEVE = 180 * 86400000; // 180 jours
+const DUREE_JETON_ELEVE = 30 * 86400000; // 30 jours (l'appareil efface le jeton dès qu'il ne sert plus)
 const DUREE_SESSION = 21600; // 6 heures (maximum permis par le cache)
 const ADMIN = 'admin';
+const NIP_ADMIN = /^\d{8,12}$/;        // administrateur : 8 à 12 chiffres
+const NIP_ENS = /^\d{6,10}$/;          // enseignant : 6 à 10 chiffres (nouveaux NIP)
+const ESSAIS_PAR_PALIER = 5;           // essais permis avant chaque blocage
+const BLOCAGE_BASE = 5 * 60000;        // 1er blocage : 5 min, puis double à chaque palier
+const BLOCAGE_MAX_PERSONNEL = 24 * 3600000; // plafond : 24 h (admin et enseignants)
+const BLOCAGE_MAX_ELEVE = 3600000;          // plafond : 1 h (élèves)
 
 /* ================= Menu dans la feuille ================= */
 function onOpen() {
@@ -58,6 +67,7 @@ function onOpen() {
     .createMenu('Verbes irréguliers')
     .addItem('1. Préparer la feuille', 'preparerFeuille')
     .addItem('2. Définir ou changer le NIP administrateur', 'definirNip')
+    .addItem('3. Débloquer toutes les connexions', 'debloquerTout')
     .addToUi();
 }
 
@@ -80,11 +90,13 @@ function preparerFeuille() {
 
 function definirNip() {
   const ui = SpreadsheetApp.getUi();
-  const r = ui.prompt('NIP administrateur', 'Choisis un NIP de 4 à 8 chiffres (identifiant de connexion : admin) :', ui.ButtonSet.OK_CANCEL);
+  const r = ui.prompt('NIP administrateur', 'Choisis un NIP de 8 à 12 chiffres (identifiant de connexion : admin).\nÉvite les suites (12345678) et les dates.', ui.ButtonSet.OK_CANCEL);
   if (r.getSelectedButton() !== ui.Button.OK) return;
   const nip = r.getResponseText().trim();
-  if (!/^\d{4,8}$/.test(nip)) { ui.alert('Le NIP doit contenir de 4 à 8 chiffres. Recommence.'); return; }
+  if (!NIP_ADMIN.test(nip)) { ui.alert('Le NIP administrateur doit contenir de 8 à 12 chiffres. Recommence.'); return; }
+  if (nipTropSimple_(nip)) { ui.alert('Ce NIP est trop facile à deviner (suite ou chiffre répété). Recommence.'); return; }
   enregistrerNipAdmin_(nip);
+  debloquer_(ADMIN);
   ui.alert('🔑 NIP administrateur enregistré (chiffré dans les propriétés du script).\nConnexion sur le site : identifiant « admin » + ce NIP.');
 }
 
@@ -115,8 +127,6 @@ function traiter_(req) {
       case 'submit':          jetonEleve_(req.code, req.token); return enregistrerResultat_(req.data || {}, req.code);
       case 'saveProgress':    return sauverProgression_(jetonEleve_(req.code, req.token), req.progression);
       case 'login':           return connexion_(req.identifiant, req.pin);
-      case 'signupStatus':    return { ok: true, ouvertes: inscriptionsOuvertes_() };
-      case 'teacherSignup':   return inscrireEnseignant_(req);
     }
     // ---- Actions qui exigent une session
     const s = session_(req.token);
@@ -139,7 +149,6 @@ function traiter_(req) {
       case 'listTeachers':  return { ok: true, enseignants: listeEnseignants_() };
       case 'saveTeacher':   return sauverEnseignant_(req);
       case 'deleteTeacher': return supprimerEnseignant_(req.identifiant);
-      case 'setSignup':     PropertiesService.getScriptProperties().setProperty('INSCRIPTIONS', req.ouvertes ? 'ouvertes' : 'fermees'); return { ok: true, ouvertes: inscriptionsOuvertes_() };
       case 'saveSchool':    return sauverEcole_(req);
       case 'deleteSchool':  return supprimerEcole_(req.id);
       case 'savePhrases':   return sauverPhrases_(req.phrases);
@@ -154,7 +163,50 @@ function traiter_(req) {
 function hacher_(texte) {
   return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, texte, Utilities.Charset.UTF_8));
 }
-function nipValide_(nip) { return /^\d{4,8}$/.test(String(nip || '')); }
+function nipValide_(nip) { return NIP_ENS.test(String(nip || '')); }
+function nipTropSimple_(nip) {
+  nip = String(nip);
+  if (/^(\d)\1+$/.test(nip)) return true;                          // 11111111
+  if ('0123456789012'.indexOf(nip) >= 0 || '9876543210987'.indexOf(nip) >= 0) return true; // suites
+  return false;
+}
+
+/* ---- Blocage progressif après des essais ratés ----
+   Conservé dans les propriétés du script (persistant, contrairement au cache).
+   Après 5 échecs : blocage de 5 min ; 5 autres : 10 min ; puis 20, 40… jusqu'au plafond.
+   Deviner un NIP par essais successifs devient ainsi irréaliste. */
+function cleBlocage_(id) { return 'blocage_' + id; }
+function lireBlocage_(id) {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(cleBlocage_(id)) || 'null') || { n: 0, paliers: 0, jusqua: 0 }; }
+  catch (e) { return { n: 0, paliers: 0, jusqua: 0 }; }
+}
+function verifierBlocage_(id, messageEleve) {
+  const b = lireBlocage_(id);
+  if (b.jusqua > Date.now()) {
+    const min = Math.ceil((b.jusqua - Date.now()) / 60000);
+    const duree = min >= 60 ? Math.ceil(min / 60) + ' h' : min + ' min';
+    throw new Error(messageEleve
+      ? 'Trop d\'essais. Réessaie dans ' + duree + ' ou demande à ton enseignant·e de réinitialiser ton NIP.'
+      : 'Trop d\'essais pour cet identifiant. Réessaie dans ' + duree + '.');
+  }
+}
+function noterEchec_(id, plafond) {
+  verrou_(function () {
+    const b = lireBlocage_(id);
+    b.n = (b.n || 0) + 1;
+    if (b.n % ESSAIS_PAR_PALIER === 0) {
+      b.paliers = (b.paliers || 0) + 1;
+      b.jusqua = Date.now() + Math.min(plafond, BLOCAGE_BASE * Math.pow(2, b.paliers - 1));
+    }
+    PropertiesService.getScriptProperties().setProperty(cleBlocage_(id), JSON.stringify(b));
+  });
+}
+function debloquer_(id) { PropertiesService.getScriptProperties().deleteProperty(cleBlocage_(id)); }
+function debloquerTout() {
+  const p = PropertiesService.getScriptProperties();
+  Object.keys(p.getProperties()).forEach(function (k) { if (k.indexOf('blocage_') === 0) p.deleteProperty(k); });
+  SpreadsheetApp.getUi().alert('🔓 Toutes les connexions bloquées ont été débloquées.');
+}
 
 function enregistrerNipAdmin_(nip) {
   const p = PropertiesService.getScriptProperties();
@@ -166,10 +218,9 @@ function enregistrerNipAdmin_(nip) {
 function connexion_(identifiant, nip) {
   const id = String(identifiant || '').trim().toLowerCase();
   if (!id) throw new Error('Entre ton identifiant.');
+  if (!/^[a-z0-9._-]{2,20}$/.test(id)) throw new Error('Identifiant ou NIP incorrect.');
+  verifierBlocage_(id, false);
   const cache = CacheService.getScriptCache();
-  const cleEchecs = 'echecs_' + id;
-  const echecs = Number(cache.get(cleEchecs) || 0);
-  if (echecs >= 5) throw new Error('Trop d\'essais pour cet identifiant. Réessaie dans 5 minutes.');
 
   let session = null;
   if (id === ADMIN) {
@@ -179,20 +230,18 @@ function connexion_(identifiant, nip) {
     if (hacher_((p.getProperty('NIP_SEL') || '') + String(nip || '')) === hash) session = { id: ADMIN, role: 'admin', nom: 'Administrateur' };
   } else {
     const e = trouverEnseignant_(id);
-    if (e && e.hash && hacher_(e.sel + String(nip || '')) === e.hash) {
-      if (e.attente) { cache.remove(cleEchecs); throw new Error('Ton compte est en attente d\'activation par l\'administrateur. Réessaie quand il t\'aura confirmé l\'activation.'); }
-      if (!e.actif) { cache.remove(cleEchecs); throw new Error('Ce compte est désactivé. Contacte l\'administrateur.'); }
-      session = { id: e.identifiant, role: 'enseignant', nom: e.nom };
-    }
+    if (e && e.actif && hacher_(e.sel + String(nip || '')) === e.hash) session = { id: e.identifiant, role: 'enseignant', nom: e.nom };
   }
   if (!session) {
-    cache.put(cleEchecs, String(echecs + 1), 300);
+    noterEchec_(id, BLOCAGE_MAX_PERSONNEL);
     throw new Error('Identifiant ou NIP incorrect.');
   }
-  cache.remove(cleEchecs);
+  if (lireBlocage_(id).n) debloquer_(id);
   const jeton = Utilities.getUuid() + Utilities.getUuid().slice(0, 8);
   cache.put('s_' + jeton, JSON.stringify(session), DUREE_SESSION);
-  return { ok: true, token: jeton, session: session };
+  // NIP trop court (créé avant la version 4) : on invite à le changer
+  const court = String(nip || '').length < (session.role === 'admin' ? 8 : 6);
+  return { ok: true, token: jeton, session: session, nipFaible: court };
 }
 
 function session_(jeton) {
@@ -210,8 +259,14 @@ function session_(jeton) {
 }
 
 function changerMonNip_(s, nouveau) {
-  if (!nipValide_(nouveau)) throw new Error('Le NIP doit contenir de 4 à 8 chiffres.');
-  if (s.role === 'admin') { enregistrerNipAdmin_(String(nouveau)); return { ok: true }; }
+  nouveau = String(nouveau || '');
+  if (s.role === 'admin') {
+    if (!NIP_ADMIN.test(nouveau)) throw new Error('Le NIP administrateur doit contenir de 8 à 12 chiffres.');
+    if (nipTropSimple_(nouveau)) throw new Error('Ce NIP est trop facile à deviner (suite ou chiffre répété).');
+    enregistrerNipAdmin_(nouveau); return { ok: true };
+  }
+  if (!nipValide_(nouveau)) throw new Error('Le NIP doit contenir de 6 à 10 chiffres.');
+  if (nipTropSimple_(nouveau)) throw new Error('Ce NIP est trop facile à deviner (suite ou chiffre répété).');
   definirNipEnseignant_(s.id, String(nouveau));
   return { ok: true };
 }
@@ -222,10 +277,6 @@ function feuille_(nom, entetes) {
   let f = ss.getSheetByName(nom);
   if (!f) f = ss.insertSheet(nom);
   if (f.getLastRow() === 0) f.appendRow(entetes);
-  else if (f.getLastColumn() < entetes.length) { // nouvelles colonnes ajoutées par une mise à jour
-    const n = f.getLastColumn();
-    f.getRange(1, n + 1, 1, entetes.length - n).setValues([entetes.slice(n)]).setFontWeight('bold').setBackground('#ebeaff');
-  }
   return f;
 }
 function valeurs_(f, nbCol) {
@@ -240,10 +291,9 @@ function verrou_(fn) {
 
 /* ================= Enseignants ================= */
 function lireEnseignants_() {
-  const vrai = function (x) { return x === true || String(x).toUpperCase() === 'TRUE' || String(x).toLowerCase() === 'oui'; };
-  return valeurs_(feuille_(F_ENS, E_ENS), 8).filter(function (r) { return r[0]; }).map(function (r, i) {
+  return valeurs_(feuille_(F_ENS, E_ENS), 6).filter(function (r) { return r[0]; }).map(function (r, i) {
     return { ligne: i + 2, identifiant: String(r[0]).trim().toLowerCase(), nom: String(r[1]), hash: String(r[2]), sel: String(r[3]),
-             actif: vrai(r[4]), cree: r[5] instanceof Date ? r[5].toISOString() : '', attente: vrai(r[6]), courriel: String(r[7] || '').trim() };
+             actif: r[4] === true || String(r[4]).toUpperCase() === 'TRUE' || String(r[4]).toLowerCase() === 'oui' };
   });
 }
 function trouverEnseignant_(id) {
@@ -253,7 +303,7 @@ function trouverEnseignant_(id) {
 function listeEnseignants_() {
   const groupes = listeGroupes_();
   return lireEnseignants_().map(function (e) {
-    return { identifiant: e.identifiant, nom: e.nom, actif: e.actif, attente: e.attente, courriel: e.courriel, cree: e.cree,
+    return { identifiant: e.identifiant, nom: e.nom, actif: e.actif,
              groupes: groupes.filter(function (g) { return g.enseignant === e.identifiant; }).map(function (g) { return g.groupe; }) };
   });
 }
@@ -274,18 +324,20 @@ function sauverEnseignant_(req) {
     if (req.nouveau) {
       if (e) throw new Error('Cet identifiant existe déjà.');
       if (!nom) throw new Error('Entre le nom de l\'enseignant.');
-      if (!nipValide_(req.pin)) throw new Error('Le NIP doit contenir de 4 à 8 chiffres.');
+      if (!nipValide_(req.pin)) throw new Error('Le NIP doit contenir de 6 à 10 chiffres.');
+      if (nipTropSimple_(req.pin)) throw new Error('Ce NIP est trop facile à deviner (suite ou chiffre répété).');
       const sel = Utilities.getUuid();
-      f.appendRow([id, nom, hacher_(sel + String(req.pin)), sel, true, new Date(), false, '']);
+      f.appendRow([id, nom, hacher_(sel + String(req.pin)), sel, true, new Date()]);
       return { ok: true };
     }
     if (!e) throw new Error('Enseignant introuvable.');
     if (nom) f.getRange(e.ligne, 2).setValue(nom);
-    if (typeof req.actif === 'boolean') {
-      f.getRange(e.ligne, 5).setValue(req.actif);
-      if (req.actif) f.getRange(e.ligne, 7).setValue(false); // activer = accepter la demande
+    if (typeof req.actif === 'boolean') f.getRange(e.ligne, 5).setValue(req.actif);
+    if (req.pin) {
+      if (!nipValide_(req.pin)) throw new Error('Le NIP doit contenir de 6 à 10 chiffres.');
+      if (nipTropSimple_(req.pin)) throw new Error('Ce NIP est trop facile à deviner (suite ou chiffre répété).');
+      definirNipEnseignant_(id, String(req.pin)); debloquer_(id);
     }
-    if (req.pin) { if (!nipValide_(req.pin)) throw new Error('Le NIP doit contenir de 4 à 8 chiffres.'); definirNipEnseignant_(id, String(req.pin)); }
     return { ok: true };
   });
 }
@@ -296,34 +348,7 @@ function supprimerEnseignant_(id) {
     if (!e) throw new Error('Enseignant introuvable.');
     if (listeGroupes_().some(function (g) { return g.enseignant === id; })) throw new Error('Cet enseignant a encore des groupes : réattribue-les ou supprime-les d\'abord.');
     feuille_(F_ENS, E_ENS).deleteRow(e.ligne);
-    return { ok: true };
-  });
-}
-
-/* ================= Inscription d'un enseignant (demande de compte) ================= */
-function inscriptionsOuvertes_() { return PropertiesService.getScriptProperties().getProperty('INSCRIPTIONS') !== 'fermees'; }
-
-function inscrireEnseignant_(req) {
-  if (!inscriptionsOuvertes_()) throw new Error('Les inscriptions sont fermées pour le moment. Contacte l\'administrateur.');
-  if (req.site) return { ok: true }; // champ piège invisible rempli : robot, on ignore sans rien dire
-  const id = String(req.identifiant || '').trim().toLowerCase();
-  const nom = String(req.nom || '').trim().replace(/\s+/g, ' ').slice(0, 60);
-  const courriel = String(req.courriel || '').trim().toLowerCase().slice(0, 100);
-  if (nom.length < 3) throw new Error('Entre ton prénom et ton nom.');
-  if (!/^[a-z0-9._-]{2,20}$/.test(id)) throw new Error('Identifiant : 2 à 20 caractères (lettres minuscules, chiffres, point, tiret).');
-  if (id === ADMIN) throw new Error('L\'identifiant « admin » est réservé.');
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(courriel)) throw new Error('Entre ton adresse courriel scolaire (l\'administrateur s\'en sert pour te reconnaître).');
-  if (!nipValide_(req.pin)) throw new Error('Le NIP doit contenir de 4 à 8 chiffres.');
-  const cache = CacheService.getScriptCache();
-  const recentes = Number(cache.get('inscriptions_heure') || 0);
-  if (recentes >= MAX_INSCRIPTIONS_HEURE) throw new Error('Trop de demandes de compte en peu de temps. Réessaie dans une heure.');
-  return verrou_(function () {
-    const tous = lireEnseignants_();
-    if (tous.some(function (e) { return e.identifiant === id; })) throw new Error('Cet identifiant est déjà pris. Choisis-en un autre (ex. ajoute un chiffre).');
-    if (tous.filter(function (e) { return e.attente; }).length >= MAX_ATTENTE) throw new Error('Trop de demandes sont déjà en attente. Contacte l\'administrateur.');
-    const sel = Utilities.getUuid();
-    feuille_(F_ENS, E_ENS).appendRow([id, nom, hacher_(sel + String(req.pin)), sel, false, new Date(), true, courriel]);
-    cache.put('inscriptions_heure', String(recentes + 1), 3600);
+    debloquer_(id);
     return { ok: true };
   });
 }
@@ -370,7 +395,7 @@ function groupesPour_(s) {
     const connus = {};
     groupes.forEach(function (g) { connus[g.groupe] = true; });
     rep.orphelins = Object.keys(compte).filter(function (g) { return !connus[g]; }).map(function (g) { return { groupe: g, resultats: compte[g] }; });
-    rep.enseignants = lireEnseignants_().filter(function (e) { return !e.attente; }).map(function (e) { return { identifiant: e.identifiant, nom: e.nom, actif: e.actif }; });
+    rep.enseignants = lireEnseignants_().map(function (e) { return { identifiant: e.identifiant, nom: e.nom, actif: e.actif }; });
   }
   return rep;
 }
@@ -585,6 +610,7 @@ function progressionLue_(texte) { try { return texte ? JSON.parse(texte) : null;
 function inscrireEleve_(code, nip) {
   const c = codeEleveValide_(code);
   if (!/^\d{4}$/.test(String(nip || ''))) throw new Error('Ton NIP doit contenir exactement 4 chiffres.');
+  if (/^(\d)\1{3}$/.test(String(nip)) || ['1234', '4321', '0123', '9876'].indexOf(String(nip)) >= 0) throw new Error('Ce NIP est trop facile à deviner. Choisis-en un autre.');
   if (!groupeOuvert_(c.groupe)) throw new Error('Ce groupe n\'existe pas. Vérifie avec ton enseignant·e.');
   return verrou_(function () {
     const f = feuille_(F_ELEVES, E_ELEVES);
@@ -599,17 +625,15 @@ function inscrireEleve_(code, nip) {
 }
 function connecterEleve_(code, nip) {
   const c = codeEleveValide_(code);
-  const cache = CacheService.getScriptCache();
-  const cle = 'echecs_el_' + c.code;
-  const echecs = Number(cache.get(cle) || 0);
-  if (echecs >= 5) throw new Error('Trop d\'essais. Réessaie dans 5 minutes ou demande à ton enseignant·e de réinitialiser ton NIP.');
+  const cle = 'el_' + c.code;
+  verifierBlocage_(cle, true);
   const el = trouverEleve_(c.code);
   if (!el || !el.hash) throw new Error('Aucun NIP pour ce code : c\'est ta première connexion ?');
   if (hacher_(el.sel + String(nip || '')) !== el.hash) {
-    cache.put(cle, String(echecs + 1), 300);
+    noterEchec_(cle, BLOCAGE_MAX_ELEVE);
     throw new Error('NIP incorrect.');
   }
-  cache.remove(cle);
+  if (lireBlocage_(cle).n) debloquer_(cle);
   if (!groupeOuvert_(c.groupe)) throw new Error('Ce groupe n\'existe plus. Vérifie avec ton enseignant·e.');
   return verrou_(function () { return { ok: true, token: nouveauJeton_(trouverEleve_(c.code)), progression: progressionLue_(el.progression) }; });
 }
@@ -647,7 +671,7 @@ function reinitialiserNipEleve_(s, code) {
     const el = trouverEleve_(c.code);
     if (!el) throw new Error('Cet élève n\'a pas encore de compte.');
     feuille_(F_ELEVES, E_ELEVES).getRange(el.ligne, 2, 1, 3).setValues([['', '', '[]']]); // la progression est conservée
-    CacheService.getScriptCache().remove('echecs_el_' + c.code);
+    debloquer_('el_' + c.code);
     return { ok: true };
   });
 }

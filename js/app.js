@@ -103,15 +103,23 @@
   const LOCAL = !VI.urlConfiguree();          // mode local : pas de feuille Google, donc pas d'école ni de NIP
   const RX_CODE = /^([A-Z0-9]{2,6})-(\d{1,4})-([A-Z]{2,4}\d?)$/;
   let ECOLES = VI.store.get('vi:ecoles', []);
-  let etapeNip = null;                         // { code, mode: 'login' | 'register' | 'offline' }
+  let etapeNip = null;                         // { code, mode: 'login' | 'register' }
 
   const nomEcole = (id) => (ECOLES.find((e) => e.id === id) || {}).nom || id;
   const jeton = (code) => VI.store.get('vi:jeton:' + code, null);
   const ecrireSessionOnglet = (code) => { try { code ? sessionStorage.setItem('vi:session', code) : sessionStorage.removeItem('vi:session'); } catch (e) {} };
   const lireSessionOnglet = () => { try { return sessionStorage.getItem('vi:session'); } catch (e) { return null; } };
-  async function empreinte(texte) { // pour la connexion hors-ligne
-    try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texte)); return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join(''); }
-    catch (e) { return null; }
+  // Sécurité (appareils partagés) : aucune empreinte du NIP n'est gardée sur l'appareil,
+  // et le jeton d'un élève est effacé dès qu'il ne sert plus (élève déconnecté, aucun résultat en attente).
+  function purgerJetons() {
+    const enAttente = new Set(VI.store.get('vi:file', []).filter((x) => x && x.data).map((x) => x.code));
+    const actuel = eleve ? eleve.code : lireSessionOnglet();
+    try {
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith('vi:nip:')) localStorage.removeItem(k);   // anciennes versions
+        if (k.startsWith('vi:jeton:')) { const c = k.slice(9); if (c !== actuel && !enAttente.has(c)) localStorage.removeItem(k); }
+      });
+    } catch (e) { /* stockage bloqué */ }
   }
 
   function remplirEcoles() {
@@ -139,6 +147,7 @@
 
   function afficherConnexion() {
     eleve = null; profil = null; etapeNip = null; ecrireSessionOnglet(null); majEntete();
+    purgerJetons();
     $('#champ-ecole').hidden = LOCAL;
     remplirEcoles();
     montrerEtape('code');
@@ -158,7 +167,7 @@
       const premiere = mode === 'register';
       $('#nip-titre').innerHTML = premiere
         ? `Première connexion pour <b>${esc(codeAffiche(etapeNip.code))}</b> 🎉<br>Choisis un NIP de 4 chiffres. <b>Garde-le secret</b> : il protège ta progression.`
-        : `Bon retour, <b>${esc(codeAffiche(etapeNip.code))}</b> !<br>Entre ton NIP.` + (mode === 'offline' ? ' <span class="muted">(hors-ligne)</span>' : '');
+        : `Bon retour, <b>${esc(codeAffiche(etapeNip.code))}</b> !<br>Entre ton NIP.`;
       $('#champ-nip2').hidden = !premiere;
       $('#in-nip').value = ''; $('#in-nip2').value = '';
       $('#in-nip').setAttribute('autocomplete', premiere ? 'new-password' : 'current-password');
@@ -188,8 +197,7 @@
       etapeNip = { code, mode: rep.nipDefini ? 'login' : 'register' };
     } catch (e) {
       if (e.serveur) return erreurConnexion(e.message);
-      if (!VI.store.get('vi:nip:' + code, null)) return erreurConnexion('Pas de connexion Internet. Ta première connexion doit se faire en ligne.');
-      etapeNip = { code, mode: 'offline' };
+      return erreurConnexion('Pas de connexion Internet. La connexion doit se faire en ligne; ensuite, tu pourras continuer même si le réseau coupe.');
     } finally { occupe(btn, false, 'Continuer →'); }
     montrerEtape('nip', etapeNip.mode);
   }
@@ -200,15 +208,10 @@
     if (!/^\d{4}$/.test(nip)) return erreurConnexion('Ton NIP contient exactement 4 chiffres.', $('#in-nip'));
     const { code, mode } = etapeNip;
     if (mode === 'register' && $('#in-nip2').value.trim() !== nip) return erreurConnexion('Les deux NIP ne sont pas identiques.', $('#in-nip2'));
-    const emp = await empreinte(code + '|' + nip);
-    if (mode === 'offline') {
-      if (!emp || emp !== VI.store.get('vi:nip:' + code, null)) return erreurConnexion('NIP incorrect.', $('#in-nip'));
-      return reussirConnexion(code, null, null);
-    }
+    if (mode === 'register' && (/^(\d)\1{3}$/.test(nip) || ['1234', '4321', '0123', '9876'].includes(nip))) return erreurConnexion('Ce NIP est trop facile à deviner. Choisis-en un autre.', $('#in-nip'));
     const btn = $('#btn-entrer'); occupe(btn, true, 'Connexion…');
     try {
       const rep = await VI.api(mode === 'register' ? 'studentRegister' : 'studentLogin', { code, pin: nip }, 15000);
-      if (emp) VI.store.set('vi:nip:' + code, emp);
       reussirConnexion(code, rep.token, rep.progression);
     } catch (e) {
       erreurConnexion(e.serveur ? e.message : 'Impossible de joindre le serveur. Réessaie dans un instant.', $('#in-nip'));
@@ -1018,27 +1021,28 @@
     let file = VI.store.get('vi:file', []).filter((x) => x && x.data);
     envoiEnCours = true; majSync(true);
     try {
-      while (file.length) {
-        const item = file[0];
+      let i = 0;
+      while (i < file.length) {
+        const item = file[i];
         const tk = jeton(item.code);
-        if (!tk) break;                              // l'élève devra se reconnecter
+        if (!tk) { i++; continue; }                  // cet élève devra se reconnecter : on passe aux autres
         try {
           await VI.api('submit', { code: item.code, token: tk, data: item.data });
-          file.shift();
+          file.splice(i, 1);
         } catch (e) {
           if (!e.serveur) throw e;                   // réseau : on réessaiera plus tard
           if (/Session élève expirée/.test(e.message)) {
             VI.store.del('vi:jeton:' + item.code);
-            if (!avertiSession) { avertiSession = true; VI.toast('🔒 Reconnecte-toi avec ton NIP pour envoyer tes résultats.', 'erreur'); }
-            break;
+            if (eleve && item.code === eleve.code && !avertiSession) { avertiSession = true; VI.toast('🔒 Reconnecte-toi avec ton NIP pour envoyer tes résultats.', 'erreur'); }
+            i++; continue;
           }
           item._essais = (item._essais || 0) + 1;
-          if (item._essais >= 5) file.shift(); else throw e;
+          if (item._essais >= 5) file.splice(i, 1); else throw e;
         } finally { VI.store.set('vi:file', file); }
       }
       await pousserProgression();
     } catch (e) { /* on réessaiera */ }
-    finally { envoiEnCours = false; majSync(); }
+    finally { envoiEnCours = false; purgerJetons(); majSync(); }
   }
   // Sauvegarde la progression de l'élève connecté dans la feuille Google
   async function pousserProgression() {
@@ -1066,7 +1070,7 @@
   VI.initApparence($('#btn-theme'), $('#btn-lecture'));
   VI.store.del('vi:dernier'); // ancienne reconnexion automatique (remplacée par le NIP)
   const enCours = lireSessionOnglet();   // même onglet déjà connecté (ex. page actualisée)
-  if (enCours && RX_CODE.test(enCours) && (LOCAL || jeton(enCours) || VI.store.get('vi:nip:' + enCours, null))) reussirConnexion(enCours, null, null);
+  if (enCours && RX_CODE.test(enCours) && (LOCAL || jeton(enCours))) reussirConnexion(enCours, null, null);
   else afficherConnexion();
   majSync();
   viderFile();

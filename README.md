@@ -21,51 +21,6 @@ apps-script/Code.gs   ← code à coller dans Google Apps Script
 
 ---
 
-## 🆕 Mise à jour vers la version 4 : les enseignants créent leur compte
-
-**Nouveauté :** sur la page de connexion de l'espace enseignant, un lien **« Créer un compte »** permet à un enseignant d'entrer son nom, son courriel scolaire, un identifiant et **le NIP de son choix**. Le compte reste **en attente** : l'enseignant ne peut pas se connecter tant que l'administrateur ne l'a pas activé.
-
-Tes données actuelles (résultats, groupes, élèves, comptes enseignants) sont **conservées**. La feuille « Enseignants » reçoit simplement deux colonnes de plus (« En attente » et « Courriel »), ajoutées automatiquement.
-
-### A. Mettre à jour le script Google (5 minutes)
-1. Ouvre ta feuille Google, puis **Extensions › Apps Script**.
-2. Sélectionne tout le contenu de `Code.gs` (Ctrl + A), efface-le, puis colle **tout** le nouveau fichier `apps-script/Code.gs`. Clique 💾 **Enregistrer**.
-3. **Déployer › Gérer les déploiements** › clique sur ✏️ (crayon) › **Version : Nouvelle version** › **Déployer**.
-   ⚠️ N'utilise **pas** « Nouveau déploiement » : l'URL changerait et il faudrait modifier `js/config.js`.
-4. Vérifie : colle ton URL suivie de `?action=ping` dans le navigateur. Tu dois voir `"version":4`.
-
-> Aucune nouvelle autorisation Google n'est demandée : le script utilise les mêmes services qu'avant.
-
-### B. Mettre à jour le site sur GitHub (5 minutes)
-1. Dans ton dépôt GitHub, clique sur **Add file › Upload files**.
-2. Glisse ces 4 fichiers **en respectant leur dossier** (le plus simple : glisser les dossiers `js` et `css` au complet, avec `enseignant.html` et `sw.js`) :
-   - `enseignant.html`
-   - `js/enseignant.js`
-   - `css/styles.css`
-   - `sw.js` (sa `VERSION` passe à `iv-v7`, ce qui force les appareils à charger la nouvelle version)
-3. **Commit changes**. Attends 1 ou 2 minutes, puis recharge l'espace enseignant (Ctrl + Maj + R).
-
-> Ne remplace **pas** `js/config.js` si ton URL y est déjà : la version de l'archive contient `VOTRE_URL_ICI`.
-
-### C. Tester (2 minutes)
-1. Dans une fenêtre de navigation privée, ouvre `…/enseignant.html` › **Créer un compte** › remplis le formulaire avec un compte test.
-2. Essaie de te connecter avec ce compte : le message « Ton compte est en attente d'activation » doit apparaître.
-3. Connecte-toi avec `admin` › onglet **🧑‍🏫 Enseignants** (une pastille rouge indique le nombre de demandes) › **✅ Activer**.
-4. Reconnecte-toi avec le compte test : ça fonctionne. Supprime-le ensuite s'il ne sert plus.
-
-### Ce que voit l'administrateur
-- Dans l'onglet **🧑‍🏫 Enseignants**, l'encadré **⏳ Demandes de compte en attente** montre le nom, le courriel, l'identifiant et la date de chaque demande, avec **✅ Activer** ou **Refuser** (refuser supprime la demande, après confirmation).
-- L'enseignant n'est pas avisé automatiquement : écris-lui (le courriel est cliquable) pour lui dire que son compte est actif.
-- La case **🚪 Inscription en ligne** ouvre ou ferme les demandes. Fermée, le lien « Créer un compte » disparaît et seul l'administrateur peut ajouter des comptes (comme avant).
-- Tu peux aussi activer un compte directement dans la feuille : onglet « Enseignants », mets `TRUE` dans « Actif » et `FALSE` dans « En attente ».
-
-### Protections intégrées
-- Le NIP choisi est haché dès sa réception (jamais lisible, même par l'administrateur).
-- Un compte en attente ou désactivé ne peut pas se connecter. Le message « en attente » ne s'affiche qu'avec le bon NIP, ce qui ne révèle pas quels identifiants existent.
-- Anti-pourriel : 10 demandes par heure au maximum, 30 demandes en attente au maximum, et un champ piège invisible qui bloque les robots.
-
----
-
 ## Étape 1 — Créer la base de données (Google Sheets), environ 10 minutes
 
 1. Va sur <https://sheets.google.com> et crée une **feuille vide**. Nomme-la par exemple « Verbes irréguliers — résultats ».
@@ -75,10 +30,10 @@ Tes données actuelles (résultats, groupes, élèves, comptes enseignants) sont
 5. Menu **Verbes irréguliers › 1. Préparer la feuille**. Google demande une autorisation la première fois :
    *Continuer › choisis ton compte › Paramètres avancés › Accéder au projet (non sécurisé) › Autoriser*.
    C'est normal : c'est ton propre script.
-6. Menu **Verbes irréguliers › 2. Définir ou changer le NIP administrateur**, puis choisis un NIP de 4 à 8 chiffres. Sur le site, tu te connecteras avec l'identifiant **admin** et ce NIP.
+6. Menu **Verbes irréguliers › 2. Définir ou changer le NIP administrateur**, puis choisis un NIP de **8 à 12 chiffres** (pas de suite comme 12345678). Sur le site, tu te connecteras avec l'identifiant **admin** et ce NIP.
 7. Dans Apps Script : **Déployer › Nouveau déploiement**
    - Type (⚙️) : **Application Web**
-   - Exécuter en tant que : **Moi**
+   - Exécuter en tant que : **Moi** (de préférence avec un compte Google Workspace **du centre de services**, pas un compte personnel)
    - Qui a accès : **Tout le monde**
    - Clique sur **Déployer** et copie l'**URL de l'application Web** (elle se termine par `/exec`).
 
@@ -112,7 +67,8 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 - **Connexion** : l'élève choisit son **école** dans une liste, puis entre son numéro de groupe et ses initiales (ex. École Saint-Jean · `21-DC`). Si deux élèves d'un groupe ont les mêmes initiales, l'un ou l'une ajoute un chiffre (`21-DC2`). Aucun nom complet n'est enregistré (Loi 25).
 - **NIP personnel** : à la première connexion, l'élève choisit un NIP de 4 chiffres. Ce NIP est ensuite demandé à chaque connexion, ce qui empêche un autre élève d'utiliser son code. En cas d'oubli, l'enseignant le réinitialise dans la fiche de l'élève, et la progression est conservée.
 - **Progression sur tous les appareils** : la progression (verbes maîtrisés, XP, badges, records) est sauvegardée dans la feuille Google. L'élève la retrouve sur n'importe quel Chromebook, ordinateur ou cellulaire.
-- Sur un **Chromebook partagé**, les codes déjà utilisés apparaissent comme raccourcis, mais le NIP est toujours demandé. La session se ferme à la fermeture du navigateur.
+- Sur un **Chromebook partagé**, les codes déjà utilisés apparaissent comme raccourcis, mais le NIP est toujours demandé. La session se ferme à la fermeture du navigateur. Aucune trace du NIP n'est gardée sur l'appareil, et la clé de session de l'élève est effacée dès qu'il se déconnecte (sauf si des résultats attendent d'être envoyés).
+- La connexion exige Internet. Une fois connecté, l'élève peut continuer si le réseau coupe : ses résultats partent automatiquement au retour du réseau.
 - On choisit un **bloc** (1 à 4), puis une **activité** :
 
 | Activité | Description |
@@ -135,21 +91,21 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 |---|---|---|
 | Résultats visibles | tous les groupes | **ses groupes seulement** |
 | Créer / supprimer des groupes | tous | les siens |
-| Comptes enseignants (ajouter, activer les demandes, désactiver, nouveau NIP) | ✅ | ❌ |
-| Demander un compte (lien « Créer un compte ») | — | ✅ |
+| Comptes enseignants (ajouter, désactiver, nouveau NIP) | ✅ | ❌ |
 | Réattribuer un groupe, gérer les résultats « orphelins » | ✅ | ❌ |
 | Gérer les écoles (ajouter, renommer, désactiver) | ✅ | ❌ |
 | Réinitialiser le NIP d'un élève | tous | ses élèves |
 | Listes de verbes (communes à tous) | ✅ | ❌ |
 | Export CSV, changer son NIP | ✅ | ✅ |
 
-- Un enseignant peut **demander son compte** sur la page de connexion (« Créer un compte ») en choisissant son NIP. L'administrateur l'active dans l'onglet **🧑‍🏫 Enseignants**.
-- L'administrateur peut aussi créer un compte lui-même dans ce même onglet (nom, identifiant, NIP de départ) et transmettre l'identifiant et le NIP.
+- L'administrateur crée les comptes dans l'onglet **🧑‍🏫 Enseignants** (nom, identifiant, NIP de départ) et transmet l'identifiant et le NIP.
 - L'administrateur crée les **écoles** dans l'onglet **🏛️ Écoles** : un nom visible par les élèves et un code court (ex. `SJ`) qui ne change plus.
 - Chaque enseignant crée ses groupes dans **🏫 Mes groupes** en choisissant l'école. Dans une même école, un numéro n'appartient qu'à un seul enseignant, mais deux écoles peuvent chacune avoir un groupe 21.
 - Un élève qui entre un groupe qui n'existe pas est bloqué avec un message. Si personne n'a encore créé de groupe, tous les groupes sont acceptés.
 - Le tri des données se fait dans le script Google : un enseignant ne reçoit jamais les résultats des autres groupes.
-- Les NIP sont hachés (jamais en clair). Après 5 essais ratés, l'identifiant est bloqué 5 minutes. La session expire après 6 heures d'inactivité ou à la fermeture de l'onglet.
+- Les NIP sont hachés (jamais en clair). NIP administrateur : 8 à 12 chiffres; NIP enseignant : 6 à 10 chiffres; les suites et les chiffres répétés sont refusés. Un ancien NIP plus court fonctionne encore, mais un message invite à le changer.
+- **Blocage progressif** : après 5 essais ratés, l'identifiant est bloqué 5 minutes, puis 10, 20, 40… (jusqu'à 24 h pour le personnel, 1 h pour les élèves). Deviner un NIP par essais successifs devient irréaliste. Menu de la feuille *Verbes irréguliers › 3. Débloquer toutes les connexions* en cas de besoin. Un nouveau NIP (enseignant) ou une réinitialisation (élève) débloque aussi le compte.
+- La session enseignant expire après 6 heures d'inactivité ou à la fermeture de l'onglet.
 
 ### Pour l'enseignant (identifiant + NIP)
 - **👥 Élèves** : activités, moyenne, meilleur sprint, temps de pratique et verbes à revoir pour chaque élève. Filtres par groupe, bloc, activité et période.
@@ -161,6 +117,21 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 
 
 ---
+
+## 🔒 Sécurité et vie privée (version 4)
+
+- **Données recueillies** : école, groupe, initiales, résultats aux exercices et progression. Aucun nom complet, courriel ni date de naissance.
+- **Hébergement** : GitHub Pages ne sert que les fichiers du site; **aucune donnée d'élève n'y transite**. Les données vont directement dans la feuille Google, par HTTPS.
+- **Accès du script limité** : la mention `@OnlyCurrentDoc` limite le script à **sa propre feuille** (il n'a pas accès aux autres fichiers du propriétaire).
+- **Contrôle d'accès côté serveur** : un enseignant ne reçoit jamais les données des groupes des autres.
+- **Politique de sécurité du contenu (CSP)** dans les pages : le navigateur refuse tout script externe et ne parle qu'au script Google.
+- **Recommandations** : utiliser un compte Google Workspace du centre de services (pas un compte personnel), partager la feuille avec le moins de personnes possible, et réaliser une évaluation des facteurs relatifs à la vie privée (ÉFVP) allégée avec le responsable de l'accès à l'information.
+
+### Mise à jour vers la version 4
+1. Colle le nouveau `apps-script/Code.gs`, enregistre, puis relance **1. Préparer la feuille** : Google redemande l'autorisation (elle est maintenant limitée à cette feuille).
+2. **Déployer › Gérer les déploiements › ✏️ › Nouvelle version** (l'URL `/exec` ne change pas).
+3. Change le NIP administrateur s'il a moins de 8 chiffres (menu, étape 2). Les enseignants dont le NIP a moins de 6 chiffres verront un message les invitant à le changer.
+4. Téléverse dans GitHub tous les fichiers du site (`index.html`, `enseignant.html`, `sw.js`, `js/app.js`, `js/enseignant.js`).
 
 ## 🧠 Fondements pédagogiques
 - **Pratique de récupération** (*retrieval practice*) : se tester plutôt que relire.
@@ -175,15 +146,14 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfy…/exec";
 |---|---|
 | « 📴 Local » s'affiche | L'URL n'est pas configurée dans `js/config.js`. |
 | « Aucun NIP administrateur » | Dans la feuille : menu *Verbes irréguliers › Définir ou changer le NIP administrateur*. |
-| « Ton compte est en attente d'activation » | L'administrateur doit cliquer sur **✅ Activer** dans l'onglet Enseignants. |
-| « Le script Google n'est pas encore à jour (version 4) » à l'inscription | Le site a été mis à jour, mais pas le script : refais l'étape A de la mise à jour (nouvelle version du déploiement). |
-| Le lien « Créer un compte » n'apparaît pas | Les inscriptions sont fermées : l'administrateur coche **Inscription en ligne** dans l'onglet Enseignants. |
 | Un enseignant a oublié son NIP | L'administrateur clique sur **Nouveau NIP** dans l'onglet Enseignants. |
 | L'administrateur a oublié son NIP | Dans la feuille : menu *Verbes irréguliers › Définir ou changer le NIP administrateur*. |
+| « Trop d'essais… Réessaie dans … » | Attendre, ou : nouveau NIP (enseignant), réinitialisation du NIP (élève), ou menu *3. Débloquer toutes les connexions* dans la feuille. |
+| « Ton NIP est trop court… » à la connexion | Changer son NIP dans **⚙️ Mon compte** (6 à 10 chiffres; administrateur : 8 à 12). |
 | « Ce groupe n'existe pas dans cette école » | L'enseignant doit d'abord créer ce groupe dans **Mes groupes**, dans la bonne école. |
 | Un élève a oublié son NIP | Dans la fiche de l'élève : **Réinitialiser le NIP**. L'élève en choisit un nouveau, et sa progression est conservée. |
 | « Ce code a déjà un NIP » à la première connexion | Un autre élève du groupe a les mêmes initiales : ajouter un chiffre (ex. AB2). |
-| « Reconnecte-toi pour envoyer tes résultats » | La session de l'élève a expiré (après 180 jours ou une réinitialisation du NIP) : il se reconnecte avec son NIP, et les résultats en attente partent automatiquement. |
+| « Reconnecte-toi pour envoyer tes résultats » | La session de l'élève a expiré (après 30 jours, une réinitialisation du NIP ou une déconnexion sur un appareil partagé) : il se reconnecte avec son NIP, et les résultats en attente partent automatiquement. |
 | Les résultats n'arrivent pas | Vérifie que le déploiement est bien « Qui a accès : **Tout le monde** » et que l'URL se termine par `/exec`. |
 | Une modification de `Code.gs` ne s'applique pas | Publie une **nouvelle version** du déploiement (voir l'étape 1). |
 | Pas de son 🔊 | La voix dépend du navigateur. Chrome et Edge ont des voix anglaises par défaut. |

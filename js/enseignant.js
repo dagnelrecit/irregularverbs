@@ -32,7 +32,7 @@
     const id = $('#in-id').value.trim().toLowerCase();
     const nip = $('#in-nip').value.trim();
     if (!id) { $('#erreur-nip').textContent = 'Entre ton identifiant.'; $('#in-id').focus(); return; }
-    if (!/^\d{4,8}$/.test(nip)) { $('#erreur-nip').textContent = 'Le NIP contient de 4 à 8 chiffres.'; $('#in-nip').focus(); return; }
+    if (!/^\d{4,12}$/.test(nip)) { $('#erreur-nip').textContent = 'Le NIP contient seulement des chiffres.'; $('#in-nip').focus(); return; }
     $('#btn-nip').disabled = true; $('#btn-nip').textContent = 'Vérification…'; $('#erreur-nip').textContent = '';
     try {
       const rep = await VI.api('login', { identifiant: id, pin: nip });
@@ -40,69 +40,19 @@
       ecrireAuth(auth);
       $('#in-nip').value = '';
       await ouvrirTableau();
+      if (rep.nipFaible) VI.toast('🔐 Ton NIP est trop court pour les nouvelles règles de sécurité. Change-le dans « ⚙️ Mon compte » (' + (estAdmin() ? '8 à 12' : '6 à 10') + ' chiffres).', 'erreur');
     } catch (err) {
       $('#erreur-nip').textContent = err.serveur ? err.message : 'Impossible de joindre la feuille Google. Vérifie ta connexion ou l\'URL du script.';
       $('#in-nip').select();
     } finally { $('#btn-nip').disabled = false; $('#btn-nip').textContent = 'Entrer'; }
   });
 
-  /* ---------------- Créer un compte (demande activée ensuite par l'administrateur) ---------------- */
-  function vueConnexion(vue) { // 'connexion' | 'inscription' | 'envoyee'
-    $('#form-nip').hidden = vue !== 'connexion';
-    $('#form-inscription').hidden = vue !== 'inscription';
-    $('#inscription-envoyee').hidden = vue !== 'envoyee';
-    const focus = { connexion: '#in-id', inscription: '#ins-nom', envoyee: '#btn-retour-connexion' }[vue];
-    if (focus) $(focus).focus();
-  }
-  let etatInscriptions = null;
-  async function verifierInscriptions() { // masque le lien si l'administrateur a fermé les inscriptions
-    try { etatInscriptions = (await VI.api('signupStatus', {}, 10000)).ouvertes; } catch (e) { return; } // ancien script ou hors-ligne : on garde le lien
-    $('#lien-inscription-zone').hidden = !etatInscriptions;
-    $('#inscriptions-fermees').hidden = etatInscriptions;
-    if (!etatInscriptions && !$('#form-inscription').hidden) vueConnexion('connexion');
-  }
-  $('#btn-vers-inscription').addEventListener('click', () => { $('#erreur-inscription').textContent = ''; vueConnexion('inscription'); });
-  $('#btn-vers-connexion').addEventListener('click', () => vueConnexion('connexion'));
-  $('#btn-retour-connexion').addEventListener('click', () => vueConnexion('connexion'));
-  $('#ins-nom').addEventListener('input', () => { // suggère un identifiant : initiale + nom de famille
-    if ($('#ins-id').dataset.touche) return;
-    const p = VI.norm($('#ins-nom').value).replace(/[^a-z\s-]/g, '').split(/\s+/).filter(Boolean);
-    $('#ins-id').value = (p.length > 1 ? p[0][0] + p[p.length - 1] : (p[0] || '')).replace(/[^a-z0-9._-]/g, '').slice(0, 20);
-  });
-  $('#ins-id').addEventListener('input', () => { $('#ins-id').dataset.touche = '1'; });
-  $('#form-inscription').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const err = (msg, champ) => { $('#erreur-inscription').textContent = msg; if (champ) $(champ).focus(); };
-    const nom = $('#ins-nom').value.trim().replace(/\s+/g, ' ');
-    const courriel = $('#ins-courriel').value.trim().toLowerCase();
-    const id = $('#ins-id').value.trim().toLowerCase();
-    const nip = $('#ins-nip').value.trim(), nip2 = $('#ins-nip2').value.trim();
-    if (nom.length < 3) return err('Entre ton prénom et ton nom.', '#ins-nom');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(courriel)) return err('Entre ton adresse courriel scolaire.', '#ins-courriel');
-    if (!/^[a-z0-9._-]{2,20}$/.test(id)) return err('Identifiant : 2 à 20 caractères (lettres minuscules, chiffres, point, tiret), sans espace ni accent.', '#ins-id');
-    if (id === 'admin') return err('L\'identifiant « admin » est réservé.', '#ins-id');
-    if (!/^\d{4,8}$/.test(nip)) return err('Le NIP doit contenir de 4 à 8 chiffres.', '#ins-nip');
-    if (nip !== nip2) return err('Les deux NIP ne sont pas identiques.', '#ins-nip2');
-    const btn = $('#btn-inscription'); btn.disabled = true; btn.textContent = 'Envoi…'; err('');
-    try {
-      await VI.api('teacherSignup', { nom, courriel, identifiant: id, pin: nip, site: $('#ins-site').value }, 20000);
-      $('#ins-id-confirme').textContent = id;
-      ['#ins-nom', '#ins-courriel', '#ins-id', '#ins-nip', '#ins-nip2'].forEach((x) => { $(x).value = ''; });
-      delete $('#ins-id').dataset.touche;
-      $('#in-id').value = id; // prêt pour la connexion une fois le compte activé
-      vueConnexion('envoyee');
-    } catch (ex) {
-      err(ex.serveur ? (/Action inconnue/i.test(ex.message) ? 'Le script Google n\'est pas encore à jour (version 4). Avise l\'administrateur.' : ex.message)
-                     : 'Impossible de joindre la feuille Google. Vérifie ta connexion.');
-    } finally { btn.disabled = false; btn.textContent = 'Envoyer ma demande'; }
-  });
-
   function deconnecter(message) {
     if (auth) VI.api('logout', { token: auth.token }).catch(() => {});
     auth = null; ecrireAuth(null); lignes = [];
     montrer('#ecran-nip');
-    vueConnexion('connexion');
     $('#erreur-nip').textContent = message || '';
+    $('#in-id').focus();
   }
   $('#btn-deconnexion').addEventListener('click', () => deconnecter());
 
@@ -583,45 +533,12 @@
   /* ---------------- Enseignants (administrateur) ---------------- */
   let enseignants = [];
   async function chargerEnseignants() {
-    try {
-      const [rep, etat] = await Promise.all([appel('listTeachers'), VI.api('signupStatus', {}, 15000).catch(() => null)]);
-      enseignants = rep.enseignants || [];
-      if (etat) $('#chk-inscriptions').checked = !!etat.ouvertes;
-      rendreEnseignants();
-    }
+    try { enseignants = (await appel('listTeachers')).enseignants || []; rendreEnseignants(); }
     catch (err) { if (auth) VI.toast('Erreur : ' + esc(err.message), 'erreur'); }
   }
-  function rendreAttente() {
-    const attente = enseignants.filter((x) => x.attente);
-    $('#zone-attente').hidden = !attente.length;
-    $('#compteur-attente').hidden = !attente.length;
-    $('#compteur-attente').textContent = attente.length;
-    $('#compteur-attente').setAttribute('aria-label', attente.length + ' demande(s) en attente');
-    $('#table-attente').innerHTML = `<thead><tr><th>Nom</th><th>Courriel</th><th>Identifiant</th><th>Demandé le</th><th>Actions</th></tr></thead><tbody>${
-      attente.map((x) => `<tr>
-        <td>${esc(x.nom)}</td>
-        <td>${x.courriel ? `<a href="mailto:${esc(x.courriel)}">${esc(x.courriel)}</a>` : '<span class="muted">—</span>'}</td>
-        <td class="mono">${esc(x.identifiant)}</td>
-        <td>${x.cree ? new Date(x.cree).toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
-        <td><div class="actions" style="margin:0">
-          <button class="btn btn-principal btn-petit" data-ens-activer="${esc(x.identifiant)}">✅ Activer</button>
-          <button class="btn btn-fantome btn-petit btn-texte-danger" data-ens-suppr="${esc(x.identifiant)}" data-libelle="Refuser">Refuser</button>
-        </div></td></tr>`).join('')}</tbody>`;
-  }
-  $('#chk-inscriptions').addEventListener('change', async (e) => {
-    const c = e.target; c.disabled = true;
-    try {
-      const rep = await appel('setSignup', { ouvertes: c.checked });
-      c.checked = rep.ouvertes;
-      VI.toast(rep.ouvertes ? '🚪 Inscriptions ouvertes : le lien « Créer un compte » est visible.' : '🔒 Inscriptions fermées.', 'succes');
-    } catch (err) { c.checked = !c.checked; VI.toast(esc(err.message), 'erreur'); }
-    finally { c.disabled = false; }
-  });
   function rendreEnseignants() {
-    rendreAttente();
-    const comptes = enseignants.filter((x) => !x.attente);
     $('#table-ens').innerHTML = `<thead><tr><th>Nom</th><th>Identifiant</th><th>Groupes</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${
-      comptes.length ? comptes.map((x) => `<tr>
+      enseignants.length ? enseignants.map((x) => `<tr>
         <td>${esc(x.nom)}</td><td class="mono">${esc(x.identifiant)}</td>
         <td class="mono">${x.groupes.length ? esc(x.groupes.join(', ')) : '<span class="muted">—</span>'}</td>
         <td><span class="note ${x.actif ? 'haute' : 'basse'}">${x.actif ? 'Actif' : 'Inactif'}</span></td>
@@ -631,7 +548,7 @@
           <button class="btn btn-fantome btn-petit btn-texte-danger" data-ens-suppr="${esc(x.identifiant)}" ${x.groupes.length ? 'disabled title="Réattribue ou supprime d\'abord ses groupes"' : ''}>Supprimer</button>
         </div>
         <div class="ligne-nip" id="nip-${esc(x.identifiant)}" hidden>
-          <input inputmode="numeric" maxlength="8" placeholder="Nouveau NIP (4 à 8 chiffres)" aria-label="Nouveau NIP pour ${esc(x.nom)}">
+          <input inputmode="numeric" maxlength="10" placeholder="Nouveau NIP (6 à 10 chiffres)" aria-label="Nouveau NIP pour ${esc(x.nom)}">
           <button class="btn btn-secondaire btn-petit" data-ens-nip-ok="${esc(x.identifiant)}">Enregistrer</button>
         </div></td></tr>`).join('')
       : '<tr><td colspan="5" class="vide">Aucun enseignant pour l\'instant. Ajoute le premier ci-dessus.</td></tr>'}</tbody>`;
@@ -640,7 +557,7 @@
     const nom = $('#ens-nom').value.trim(), id = $('#ens-id').value.trim().toLowerCase(), nip = $('#ens-nip').value.trim();
     if (!nom) { VI.toast('Entre le nom.', 'erreur'); return; }
     if (!/^[a-z0-9._-]{2,20}$/.test(id)) { VI.toast('Identifiant : 2 à 20 caractères (minuscules, chiffres, point, tiret).', 'erreur'); return; }
-    if (!/^\d{4,8}$/.test(nip)) { VI.toast('Le NIP doit contenir de 4 à 8 chiffres.', 'erreur'); return; }
+    if (!/^\d{6,10}$/.test(nip)) { VI.toast('Le NIP doit contenir de 6 à 10 chiffres.', 'erreur'); return; }
     const btn = $('#btn-ajouter-ens'); btn.disabled = true;
     try {
       await appel('saveTeacher', { nouveau: true, identifiant: id, nom, pin: nip });
@@ -657,34 +574,26 @@
     $('#ens-id').value = p.length > 1 ? (p[0][0] + p[p.length - 1]).slice(0, 20) : (p[0] || '');
   });
   $('#ens-id').addEventListener('input', () => { $('#ens-id').dataset.touche = '1'; });
-  async function actionEnseignant(e) {
+  $('#table-ens').addEventListener('click', async (e) => {
     const b = e.target.closest('button'); if (!b) return;
     try {
-      if (b.dataset.ensActiver) {
-        b.disabled = true;
-        await appel('saveTeacher', { identifiant: b.dataset.ensActiver, actif: true });
-        VI.toast(`✅ Compte <b>${esc(b.dataset.ensActiver)}</b> activé. Avise l'enseignant : il peut se connecter avec le NIP qu'il a choisi.`, 'succes');
-        await chargerEnseignants(); chargerGroupes();
-      } else if (b.dataset.ensActif) {
+      if (b.dataset.ensActif) {
         await appel('saveTeacher', { identifiant: b.dataset.ensActif, actif: b.dataset.val === '1' });
         VI.toast('✅ Statut modifié.', 'succes'); await chargerEnseignants(); chargerGroupes();
       } else if (b.dataset.ensNip) {
         const z = $('#nip-' + b.dataset.ensNip); z.hidden = !z.hidden; if (!z.hidden) z.querySelector('input').focus();
       } else if (b.dataset.ensNipOk) {
         const v = $('#nip-' + b.dataset.ensNipOk + ' input').value.trim();
-        if (!/^\d{4,8}$/.test(v)) { VI.toast('Le NIP doit contenir de 4 à 8 chiffres.', 'erreur'); return; }
+        if (!/^\d{6,10}$/.test(v)) { VI.toast('Le NIP doit contenir de 6 à 10 chiffres.', 'erreur'); return; }
         await appel('saveTeacher', { identifiant: b.dataset.ensNipOk, pin: v });
         VI.toast('🔑 Nouveau NIP enregistré. Transmets-le à l\'enseignant.', 'succes'); rendreEnseignants();
       } else if (b.dataset.ensSuppr) {
-        const libelle = b.dataset.libelle || 'Supprimer';
-        if (!b.dataset.arme) { b.dataset.arme = '1'; b.textContent = 'Confirmer ?'; b.classList.add('arme'); setTimeout(() => { if (b.isConnected) { delete b.dataset.arme; b.textContent = libelle; b.classList.remove('arme'); } }, 4000); return; }
+        if (!b.dataset.arme) { b.dataset.arme = '1'; b.textContent = 'Confirmer ?'; b.classList.add('arme'); setTimeout(() => { if (b.isConnected) { delete b.dataset.arme; b.textContent = 'Supprimer'; b.classList.remove('arme'); } }, 4000); return; }
         await appel('deleteTeacher', { identifiant: b.dataset.ensSuppr });
-        VI.toast(libelle === 'Refuser' ? '🗑️ Demande refusée et supprimée.' : '🗑️ Compte supprimé.', 'succes'); await chargerEnseignants(); chargerGroupes();
+        VI.toast('🗑️ Compte supprimé.', 'succes'); await chargerEnseignants(); chargerGroupes();
       }
-    } catch (err) { b.disabled = false; VI.toast(esc(err.message), 'erreur'); }
-  }
-  $('#table-ens').addEventListener('click', actionEnseignant);
-  $('#table-attente').addEventListener('click', actionEnseignant);
+    } catch (err) { VI.toast(esc(err.message), 'erreur'); }
+  });
 
   /* ---------------- Mon compte ---------------- */
   $('#btn-csv').addEventListener('click', () => {
@@ -701,7 +610,8 @@
 
   $('#btn-nip-changer').addEventListener('click', async () => {
     const n = $('#nip-nouveau').value.trim(), c = $('#nip-confirm').value.trim();
-    if (!/^\d{4,8}$/.test(n)) { VI.toast('Le NIP doit contenir de 4 à 8 chiffres.', 'erreur'); return; }
+    const regle = estAdmin() ? /^\d{8,12}$/ : /^\d{6,10}$/;
+    if (!regle.test(n)) { VI.toast('Le NIP doit contenir de ' + (estAdmin() ? '8 à 12' : '6 à 10') + ' chiffres.', 'erreur'); return; }
     if (n !== c) { VI.toast('Les deux NIP ne sont pas identiques.', 'erreur'); return; }
     try {
       await appel('changePin', { nouveau: n });
@@ -713,6 +623,5 @@
   /* ---------------- Démarrage ---------------- */
   if (!VI.urlConfiguree()) { montrer('#non-configure'); return; }
   auth = lireAuth();
-  if (auth && auth.token) ouvrirTableau().catch(() => {}); else { montrer('#ecran-nip'); vueConnexion('connexion'); }
-  verifierInscriptions();
+  if (auth && auth.token) ouvrirTableau().catch(() => {}); else { montrer('#ecran-nip'); $('#in-id').focus(); }
 })();
