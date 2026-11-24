@@ -43,8 +43,39 @@
           <input id="in-nip" class="nip-input" type="password" inputmode="numeric" maxlength="8" autocomplete="current-password"></label>
         <p class="erreur" id="erreur-nip" role="alert"></p>
         <button class="btn btn-principal btn-large" type="submit" id="btn-nip">Entrer</button>
-        <p class="aide">Pas de compte ? Demande-le à l'administrateur de l'application.</p>
+        <p class="aide" id="lien-inscription-zone">Pas encore de compte ? <button type="button" class="btn-lien" id="btn-vers-inscription">Créer un compte</button></p>
+        <p class="aide" id="inscriptions-fermees" hidden>Pas de compte ? Demande-le à l'administrateur de l'application.</p>
       </form>
+
+      <!-- Demande de compte (activée ensuite par l'administrateur) -->
+      <form class="carte carte-nip" id="form-inscription" autocomplete="on" hidden novalidate>
+        <div style="font-size:2.4rem" aria-hidden="true">🧑‍🏫</div>
+        <h1>Créer un compte</h1>
+        <p class="muted">Ta demande sera envoyée à l'administrateur, qui activera ton compte.</p>
+        <label class="champ" style="margin-top:1rem;text-align:left"><span>Prénom et nom</span>
+          <input id="ins-nom" autocomplete="name" maxlength="60" placeholder="Marie Tremblay"></label>
+        <label class="champ" style="margin-top:.7rem;text-align:left"><span>Courriel scolaire</span>
+          <input id="ins-courriel" type="email" autocomplete="email" maxlength="100" placeholder="prenom.nom@ecole.qc.ca"></label>
+        <label class="champ" style="margin-top:.7rem;text-align:left"><span>Identifiant (pour te connecter)</span>
+          <input id="ins-id" autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="20" placeholder="mtremblay"></label>
+        <label class="champ" style="margin-top:.7rem;text-align:left"><span>Choisis ton NIP (4 à 8 chiffres)</span>
+          <input id="ins-nip" class="nip-input" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></label>
+        <label class="champ" style="margin-top:.7rem;text-align:left"><span>Confirme ton NIP</span>
+          <input id="ins-nip2" class="nip-input" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></label>
+        <!-- Champ piège anti-robot : invisible pour les humains, laissé vide -->
+        <label class="piege" aria-hidden="true">Site Web <input id="ins-site" tabindex="-1" autocomplete="off"></label>
+        <p class="erreur" id="erreur-inscription" role="alert"></p>
+        <button class="btn btn-principal btn-large" type="submit" id="btn-inscription">Envoyer ma demande</button>
+        <p class="aide"><button type="button" class="btn-lien" id="btn-vers-connexion">← J'ai déjà un compte</button></p>
+      </form>
+
+      <div class="carte carte-nip" id="inscription-envoyee" hidden>
+        <div style="font-size:2.4rem" aria-hidden="true">📨</div>
+        <h1>Demande envoyée</h1>
+        <p>Ton compte <b class="mono" id="ins-id-confirme"></b> est maintenant <b>en attente d'activation</b>.</p>
+        <p class="muted">Dès que l'administrateur l'aura activé, tu pourras te connecter avec cet identifiant et le NIP que tu viens de choisir. Garde ton NIP en mémoire : il n'est jamais affiché.</p>
+        <button class="btn btn-secondaire btn-large" type="button" id="btn-retour-connexion">Retour à la connexion</button>
+      </div>
     </section>
 
     <!-- Tableau de bord -->
@@ -60,7 +91,7 @@
         <button role="tab" aria-selected="false" data-onglet="groupes" id="onglet-groupes">🏫 Mes groupes</button>
         <button role="tab" aria-selected="false" data-onglet="ecoles" data-admin>🏛️ Écoles</button>
         <button role="tab" aria-selected="false" data-onglet="liste" data-admin>📚 Verbes et phrases</button>
-        <button role="tab" aria-selected="false" data-onglet="enseignants" data-admin>🧑‍🏫 Enseignants</button>
+        <button role="tab" aria-selected="false" data-onglet="enseignants" data-admin>🧑‍🏫 Enseignants <span class="pastille-attente" id="compteur-attente" hidden></span></button>
         <button role="tab" aria-selected="false" data-onglet="gestion">⚙️ Mon compte</button>
       </nav>
 
@@ -145,6 +176,16 @@
 
       <!-- Enseignants (admin) -->
       <div data-panneau="enseignants" hidden>
+        <div class="carte carte-attente" id="zone-attente" style="margin-bottom:1rem" hidden>
+          <h2>⏳ Demandes de compte en attente</h2>
+          <p class="muted petit">Ces enseignants ont créé leur compte et choisi leur NIP sur le site. Vérifie le nom et le courriel, puis active le compte. « Refuser » supprime la demande.</p>
+          <div class="table-wrap"><table id="table-attente"></table></div>
+        </div>
+        <div class="carte" style="margin-bottom:1rem">
+          <h2>🚪 Inscription en ligne</h2>
+          <label class="interrupteur"><input type="checkbox" id="chk-inscriptions"> <span>Permettre aux enseignants de demander un compte sur la page de connexion</span></label>
+          <p class="aide">Quand c'est fermé, le lien « Créer un compte » disparaît : seul l'administrateur peut ajouter des comptes (ci-dessous).</p>
+        </div>
         <div class="carte" style="margin-bottom:1rem">
           <h2>➕ Ajouter un enseignant</h2>
           <div class="filtres" style="margin:0">
